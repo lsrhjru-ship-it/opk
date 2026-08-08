@@ -6,7 +6,7 @@
 const API_BASE = "https://lsrhjru.wisp.uno/api";
 
 // 전체 계급 목록
-const RANKS = ["위원장", "부위원장", "본부장", "총감", "차관보", "사령관", "참모장", "감찰관", "작전관", "지휘관", "특별보안관", "감독관", "수사관", "보안관", "교육생"];
+const RANKS = ["위원장", "부위원장", "본부장", "총감", "차관보", "사령관", "참모장", "감찰관", "작전관", "지휘관", "특별보안관", "감독관", "수사관", "보안관", "교육생", "팩션원"];
 
 let TOKEN = localStorage.getItem("bureau_token") || null;
 let SESSION = JSON.parse(localStorage.getItem("bureau_session") || "null");
@@ -273,6 +273,8 @@ function renderJoin() {
       <div class="field"><label>팩션 코드</label><input id="jfCode" class="mono" style="width:100%; letter-spacing:2px;" placeholder="예) A3F9K2" /></div>
       <div class="field" style="margin-top:14px;"><label>이름</label><input id="jfName" style="width:100%;" /></div>
       <div class="field" style="margin-top:14px;"><label>고유번호</label><input id="jfUid" class="mono" style="width:100%;" placeholder="예) 14" /></div>
+      <div class="field" style="margin-top:14px;"><label>로그인 아이디</label><input id="jfUser" style="width:100%;" autocomplete="username" /></div>
+      <div class="field" style="margin-top:14px;"><label>로그인 비밀번호 (6자 이상)</label><input id="jfPass" type="password" style="width:100%;" autocomplete="new-password" /></div>
       <div id="joinErr" style="font-size:12.5px; color:var(--danger); margin-top:10px; display:none;"></div>
       <button type="submit" class="btn-gold disp" style="width:100%; padding:12px 0; font-size:15px; margin-top:20px;">가입하기</button>
       <button type="button" data-action="goto-gate" class="link-btn" style="display:block; margin:16px auto 0;">← 뒤로</button>
@@ -703,7 +705,7 @@ function renderApps() {
     <div class="panel" style="margin-bottom:24px;">
       ${pending.length === 0 ? `<div style="padding:24px; text-align:center; color:var(--muted); font-size:13.5px;">대기 중인 신청이 없습니다.</div>` :
       pending.map(a => `<div class="row-hover" style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-top:1px solid var(--line);">
-          <div><div style="font-size:14px; font-weight:600;">${a.name} <span class="mono" style="color:var(--muted); font-size:12px; font-weight:400;">· 고유번호 ${formatBadge(a.uid)}</span></div></div>
+          <div><div style="font-size:14px; font-weight:600;">${a.name} <span class="mono" style="color:var(--muted); font-size:12px; font-weight:400;">· 고유번호 ${formatBadge(a.uid)}${a.username ? ` · 아이디 ${a.username}` : ""}</span></div></div>
           <div style="display:flex; gap:8px; align-items:center;">
             <span class="badge ok">요청됨</span>
             <button class="icon-btn" data-action="decide-app" data-id="${a.id}" data-status="승인" style="border-color:var(--ok); color:var(--ok);">✓</button>
@@ -969,7 +971,7 @@ const CLICK_ACTIONS = {
     try {
       const res = await apiCall(`/applications/${el.dataset.id}/decide`, "PATCH", { status });
       if (res.createdUser) {
-        showToast(`승인 완료 (생성된 아이디: ${res.createdUser.username})`, "ok");
+        showToast(`승인 완료 (아이디: ${res.createdUser.username}) · 신청자가 설정한 비밀번호로 로그인 가능합니다`, "ok");
       } else {
         showToast("가입 신청을 반려했습니다", "danger");
       }
@@ -1063,14 +1065,20 @@ const SUBMIT_ACTIONS = {
     const code = document.getElementById("jfCode").value.trim().toUpperCase();
     const name = document.getElementById("jfName").value.trim();
     const uid = formatBadge(document.getElementById("jfUid").value.trim());
+    const username = document.getElementById("jfUser").value.trim();
+    const password = document.getElementById("jfPass").value;
     const err = document.getElementById("joinErr");
 
-    if (!code || !name || !uid) { err.textContent = "모든 항목을 입력하세요"; err.style.display = "block"; return; }
+    if (!code || !name || !uid || !username || password.length < 6) {
+      err.textContent = "모든 항목을 입력하세요 (비밀번호 6자 이상)"; err.style.display = "block"; return;
+    }
 
     try {
-      await apiCall("/factions/join-request", "POST", { code, name, uid });
+      await apiCall("/factions/join-request", "POST", { code, name, uid, username, password });
       VIEW = "joinSent"; render();
-    } catch (e) { }
+    } catch (e) {
+      if (err) { err.textContent = e.message; err.style.display = "block"; }
+    }
   },
   "submit-login": async () => {
     const username = document.getElementById("loginUser").value.trim();
