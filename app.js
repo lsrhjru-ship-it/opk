@@ -147,6 +147,22 @@ async function fetchFactionData() {
   try {
     const res = await apiCall("/faction/data");
     DATA = res.faction;
+
+    // 본인 계정의 최신 계급/권한을 세션에 동기화 (관리자가 권한을 새로 부여해도
+    // 로그아웃 없이 즉시 반영되도록 하기 위함 — 그렇지 않으면 로그인 시점의
+    // 오래된 SESSION.permissions 값이 계속 사용되어 새로 받은 권한 탭이 안 보임)
+    if (SESSION) {
+      const me = DATA.accounts.find(a => String(a.id) === String(SESSION.id));
+      if (me) {
+        SESSION.rank = me.rank;
+        SESSION.permissions = me.permissions || [];
+        localStorage.setItem("bureau_session", JSON.stringify(SESSION));
+      } else {
+        // 본인 계정이 삭제된 경우
+        return logout();
+      }
+    }
+
     render();
   } catch (e) {
     logout();
