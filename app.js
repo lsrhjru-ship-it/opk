@@ -43,11 +43,11 @@ function getAccessibleTabs() {
     { key: "dash", label: "대시보드" },
     { key: "rpreport", label: "RP 보고서" },
     { key: "lawcalc", label: "법률 계산기" },
+    { key: "notices", label: "사이드 공지" },
   ];
 
   if (hasPermission("members")) baseTabs.push({ key: "members", label: "팩션원 관리" });
   if (hasPermission("attendance")) baseTabs.push({ key: "attendance", label: "근태 관리" });
-  if (hasPermission("notices")) baseTabs.push({ key: "notices", label: "사이드 공지" });
   if (hasPermission("apps")) baseTabs.push({ key: "apps", label: "가입 신청" });
   if (hasPermission("warn")) baseTabs.push({ key: "warn", label: "내부경고" });
 
@@ -147,6 +147,22 @@ async function fetchFactionData() {
   try {
     const res = await apiCall("/faction/data");
     DATA = res.faction;
+
+    // 본인 계정의 최신 계급/권한을 세션에 동기화 (관리자가 권한을 새로 부여해도
+    // 로그아웃 없이 즉시 반영되도록 하기 위함 — 그렇지 않으면 로그인 시점의
+    // 오래된 SESSION.permissions 값이 계속 사용되어 새로 받은 권한 탭이 안 보임)
+    if (SESSION) {
+      const me = DATA.accounts.find(a => String(a.id) === String(SESSION.id));
+      if (me) {
+        SESSION.rank = me.rank;
+        SESSION.permissions = me.permissions || [];
+        localStorage.setItem("bureau_session", JSON.stringify(SESSION));
+      } else {
+        // 본인 계정이 삭제된 경우
+        return logout();
+      }
+    }
+
     render();
   } catch (e) {
     logout();
@@ -618,12 +634,71 @@ function renderMemberRows(list) {
   return html;
 }
 
+/* ------------------------------ 근태 총시간 순위 계산 유틸 ------------------------------ */
+
+// "2026. 8. 8. 오후 3:45:00" 형식(toLocaleString('ko-KR'))의 문자열을 Date로 파싱
+function parseKoreanDateTime(str) {
+  if (!str) return null;
+  const m = String(str).match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(오전|오후)\s*(\d{1,2}):(\d{2}):(\d{2})/);
+  if (!m) return null;
+  const [, y, mo, d, ampm, hRaw, mi, s] = m;
+  let h = parseInt(hRaw, 10);
+  if (ampm === "오후" && h !== 12) h += 12;
+  if (ampm === "오전" && h === 12) h = 0;
+  return new Date(parseInt(y, 10), parseInt(mo, 10) - 1, parseInt(d, 10), h, parseInt(mi, 10), parseInt(s, 10));
+}
+
+function formatWorkMinutes(mins) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${h}시간 ${m}분`;
+}
+
+// 팩션원별 누적 근무시간 계산 (퇴근하지 않은 근무는 현재 시각까지 실시간 반영)
+function computeAttendanceRanking() {
+  const totals = {};
+  DATA.attendance.forEach(log => {
+    const inDate = parseKoreanDateTime(log.clock_in_time);
+    if (!inDate) return;
+    const outDate = log.clock_out_time ? parseKoreanDateTime(log.clock_out_time) : new Date();
+    if (!outDate) return;
+
+    const minutes = Math.max(0, Math.round((outDate - inDate) / 60000));
+    const key = log.user_id || `${log.name}_${log.badge}`;
+    if (!totals[key]) totals[key] = { name: log.name, badge: log.badge, minutes: 0 };
+    totals[key].minutes += minutes;
+  });
+  return Object.values(totals).sort((a, b) => b.minutes - a.minutes);
+}
+
 function renderAttendance() {
   const logs = [...DATA.attendance].reverse();
   const cols = "1.2fr 1fr 0.8fr 1.5fr 1.5fr 0.8fr";
+  const ranking = computeAttendanceRanking();
 
   let html = `
     ${header("근태 관리", "인원들의 출퇴근 기록 및 계급을 확인합니다.")}
+    <div class="panel" style="margin-bottom:18px;">
+      <div style="padding:14px 18px; font-size:13px; font-weight:700; color:var(--muted); border-bottom:1px solid var(--line);">근무 총시간 순위 (근무 중인 경우 현재 시각까지 반영)</div>`;
+
+  if (ranking.length === 0) {
+    html += `<div style="padding:24px; text-align:center; color:var(--muted); font-size:13.5px;">근무 기록이 없습니다.</div>`;
+  } else {
+    ranking.forEach((r, idx) => {
+      const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : String(idx + 1);
+      html += `<div class="row-hover" style="display:flex; justify-content:space-between; align-items:center; padding:10px 18px; border-top:1px solid var(--line);">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="mono" style="width:22px; text-align:center; font-weight:700; color:${idx < 3 ? "var(--gold)" : "var(--muted)"};">${medal}</span>
+          <span style="font-weight:600;">${r.name}</span>
+          <span class="mono" style="color:var(--muted); font-size:12px;">고유번호 ${formatBadge(r.badge)}</span>
+        </div>
+        <span class="mono" style="color:var(--gold); font-weight:700;">${formatWorkMinutes(r.minutes)}</span>
+      </div>`;
+    });
+  }
+  html += `</div>`;
+
+  html += `
     <div class="panel">
       <div class="table-head" style="grid-template-columns:${cols};">
         <span>이름</span><span>계급</span><span>고유번호</span><span>출근 시간</span><span>퇴근 시간</span><span>상태</span>
@@ -653,6 +728,7 @@ function renderAttendance() {
 
 function renderNotices() {
   const notices = DATA.sideNotices;
+  const canManage = hasPermission("notices");
 
   let listHtml = "";
   if (notices.length === 0) {
@@ -669,25 +745,27 @@ function renderNotices() {
         </div>
         <div class="notice-actions">
            <button class="btn-ghost" data-action="copy-notice" data-id="${n.id}" style="padding:7px; font-size:12px;">복사</button>
-           <button class="btn-ghost danger" data-action="del-notice" data-id="${n.id}" style="padding:7px; font-size:12px;">삭제</button>
+           ${canManage ? `<button class="btn-ghost danger" data-action="del-notice" data-id="${n.id}" style="padding:7px; font-size:12px;">삭제</button>` : ""}
         </div>
       </div>`;
     });
   }
 
-  return `
-    ${header("사이드 공지", `복사하여 바로 사용할 수 있는 사전 지정 양식 (개수 : ${notices.length})`)}
+  const createFormHtml = canManage ? `
     <div class="panel" style="padding:18px; margin-bottom:22px; display:flex; gap:12px; flex-direction:column;">
       <div class="field"><label>새 공지 제목 (예: 서부 ATM)</label><input id="snTitle" placeholder="제목 입력" style="width:100%; max-width:420px;"/></div>
       <div class="field"><label>복사될 내용 (클립보드 양식)</label><textarea id="snContent" placeholder="/보안국 [ 젤리 보안국 ] 서부 ATM에서..." style="width:100%; min-height:85px;"></textarea></div>
       <button data-action="submit-notice" class="btn-gold" style="align-self:flex-start;">공지 추가</button>
-    </div>
-    
+    </div>` : "";
+
+  return `
+    ${header("사이드 공지", `복사하여 바로 사용할 수 있는 사전 지정 양식 (개수 : ${notices.length})`)}
+    ${createFormHtml}
     <div class="panel">
       <div style="display:flex; padding:12px 18px; border-bottom:1px solid var(--line); font-size:12px; color:var(--muted); font-weight:600; text-align:center;">
          <div style="width:60px;">#</div>
          <div style="flex:1;">사이드 공지 - 제목 / 클립보드(복사) 내용</div>
-         <div style="width:70px;">작업</div>
+         <div style="width:${canManage ? "70px" : "50px"};">작업</div>
       </div>
       ${listHtml}
     </div>`;
