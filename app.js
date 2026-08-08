@@ -1,5 +1,5 @@
 /* ============================================================================
-   보안국 인트라넷 — 백엔드 API 연동 + 법률 계산기 + 로컬 로고 통합 버전
+   보안국 인트라넷 — 백엔드 API 연동 + 법률 계산기 통합 버전
    ============================================================================ */
 
 const API_BASE = "https://lsrhjru.wisp.uno/api";
@@ -111,9 +111,8 @@ function genFactionCode() {
   return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
-// 🛡️ 로컬 서버의 /logo.png 주소로 변경된 로고 함수
 function sealSvg(size) {
-  return `<img src="/logo.png" alt="보안국 로고" class="bureau-logo-img" style="width:${size}px; height:${size}px;" />`;
+  return `<img src="https://cdn.discordapp.com/attachments/1532756181557313706/1532757610464411719/3c9c4182b3e7bae0.png?ex=6a77e683&is=6a769503&hm=7dfc4b4e888cda0fde247badee027883426957dc6dd57700c1cbcdc28b96dacb" alt="보안국 로고" class="bureau-logo-img" style="width:${size}px; height:${size}px;" />`;
 }
 
 function logout() {
@@ -375,7 +374,8 @@ function formatMinutes(n) {
 
 function renderLawCalc() {
   const categories = ["전체", "건물 알피", "차량 알피", "영장", "경범죄", "중범죄"];
-  
+
+  // 데이터 필터링
   const query = LAW_SEARCH.trim().toLowerCase();
   const filtered = LAW_DATA.filter(item => {
     const matchCat = LAW_CAT === "전체" || item.category === LAW_CAT;
@@ -386,6 +386,7 @@ function renderLawCalc() {
     return matchCat && matchQuery;
   });
 
+  // 합계 계산
   let totalFine = 0, totalDetention = 0, count = 0, excluded = [];
   LAW_DATA.forEach(item => {
     const key = getLawKey(item);
@@ -403,6 +404,7 @@ function renderLawCalc() {
   return `
     ${header("법률 검색 및 계산기", "죄목을 선택하면 벌금과 구금시간이 자동으로 합산됩니다.")}
     
+    <!-- 카테고리 탭 필터 -->
     <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
       ${categories.map(c => `
         <button class="btn-ghost ${LAW_CAT === c ? 'active' : ''}" 
@@ -413,6 +415,7 @@ function renderLawCalc() {
       `).join("")}
     </div>
 
+    <!-- 검색 및 조작 버튼 -->
     <div class="panel" style="display:flex; align-items:center; gap:12px; padding:10px 16px; margin-bottom:16px;">
       <span style="color:var(--muted); font-size:15px;">🔍</span>
       <input id="lawSearchInput" data-action="law-search" value="${LAW_SEARCH}" placeholder="검색어 입력 (죄목, 키워드, 위치)" style="background:transparent; border:none; color:var(--text); width:100%; font-size:14px; outline:none;" />
@@ -420,6 +423,7 @@ function renderLawCalc() {
       <button data-action="law-clear-all" class="btn-ghost" style="padding:6px 12px; font-size:12px; white-space:nowrap;">선택 해제</button>
     </div>
 
+    <!-- 법률 데이터 목록 테이블 -->
     <div class="panel" style="margin-bottom:16px; max-height:420px; overflow-y:auto;">
       <div class="table-head" style="grid-template-columns: 50px 100px 1.5fr 1fr 1fr 2fr; sticky; top:0; background:var(--panel); z-index:2;">
         <span style="text-align:center;">선택</span>
@@ -447,6 +451,7 @@ function renderLawCalc() {
       }).join("")}
     </div>
 
+    <!-- 합계 계산기 결과 박스 -->
     <div style="display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
       <div class="panel" style="flex:1; min-width:200px; padding:16px 20px;">
         <div style="font-size:12px; color:var(--muted); font-weight:600;">선택된 항목</div>
@@ -464,6 +469,7 @@ function renderLawCalc() {
 
     ${excluded.length > 0 ? `<div style="font-size:12px; color:var(--danger); margin-bottom:16px; font-weight:600;">⚠ 수동 계산 필요 항목 포함: ${excluded.join(", ")}</div>` : ''}
 
+    <!-- 클릭 항목 상세 정보 -->
     ${lastItem ? `
     <div class="panel" style="padding:18px 20px; line-height:1.6; font-size:13.5px;">
       <div style="font-weight:700; color:var(--gold); margin-bottom:6px;">📌 ${lastItem.name} (${lastItem.category}) 진행 절차</div>
@@ -689,6 +695,7 @@ const CLICK_ACTIONS = {
   "switch-tab": (el) => { TAB = el.dataset.tab; refreshTab(); },
   "logout": () => logout(),
 
+  // 법률 계산기 액션
   "law-cat": (el) => { LAW_CAT = el.dataset.cat; refreshTab(); },
   "law-toggle": (el) => {
     const key = el.dataset.key;
@@ -711,7 +718,7 @@ const CLICK_ACTIONS = {
       const res = await apiCall("/attendance/toggle", "POST");
       showToast(res.isClockIn ? "출근 처리되었습니다" : "퇴근 처리되었습니다", res.isClockIn ? "ok" : "danger");
       await fetchFactionData();
-    } catch (e) {}
+    } catch (e) { }
   },
 
   "submit-notice": async () => {
@@ -723,14 +730,14 @@ const CLICK_ACTIONS = {
       await apiCall("/notices", "POST", { title, content });
       showToast("공지가 추가되었습니다");
       await fetchFactionData();
-    } catch (e) {}
+    } catch (e) { }
   },
   "del-notice": async (el) => {
     try {
       await apiCall(`/notices/${el.dataset.id}`, "DELETE");
       showToast("공지가 삭제되었습니다", "danger");
       await fetchFactionData();
-    } catch (e) {}
+    } catch (e) { }
   },
   "copy-notice": (el) => {
     const id = el.dataset.id;
@@ -768,14 +775,14 @@ const CLICK_ACTIONS = {
       showToast(`${name} 팩션원 등록 완료 (초기 계정 ${res.username})`);
       document.getElementById("addMemberForm").style.display = "none";
       await fetchFactionData();
-    } catch (e) {}
+    } catch (e) { }
   },
   "toggle-status": async (el) => {
     try {
       await apiCall(`/members/${el.dataset.id}/status`, "PATCH");
       showToast("상태가 변경되었습니다");
       await fetchFactionData();
-    } catch (e) {}
+    } catch (e) { }
   },
   "decide-app": async (el) => {
     const status = el.dataset.status;
@@ -787,7 +794,7 @@ const CLICK_ACTIONS = {
         showToast("가입 신청을 반려했습니다", "danger");
       }
       await fetchFactionData();
-    } catch (e) {}
+    } catch (e) { }
   },
 
   "submit-warn": async () => {
@@ -800,14 +807,14 @@ const CLICK_ACTIONS = {
       await apiCall("/warnings", "POST", { targetName, reason, severity });
       showToast("내부경고가 등록되었습니다");
       await fetchFactionData();
-    } catch (e) {}
+    } catch (e) { }
   },
   "remove-warn": async (el) => {
     try {
       await apiCall(`/warnings/${el.dataset.id}`, "DELETE");
       showToast("삭제되었습니다", "danger");
       await fetchFactionData();
-    } catch (e) {}
+    } catch (e) { }
   },
 
   "change-password": async (el) => {
@@ -820,14 +827,14 @@ const CLICK_ACTIONS = {
       await apiCall(`/members/${id}/password`, "PATCH", { newPassword });
       showToast("비밀번호가 변경되었습니다");
       input.value = "";
-    } catch (e) {}
+    } catch (e) { }
   },
   "remove-account": async (el) => {
     try {
       await apiCall(`/members/${el.dataset.id}`, "DELETE");
       showToast("계정이 삭제되었습니다", "danger");
       await fetchFactionData();
-    } catch (e) {}
+    } catch (e) { }
   },
 
   "save-webhook": async () => {
@@ -836,7 +843,7 @@ const CLICK_ACTIONS = {
       await apiCall("/settings/webhook", "PATCH", { webhookUrl });
       showToast("웹훅 주소가 저장되었습니다");
       await fetchFactionData();
-    } catch (e) {}
+    } catch (e) { }
   },
   "test-webhook": async () => {
     const webhookUrl = document.getElementById("webhookUrl").value.trim();
@@ -844,7 +851,7 @@ const CLICK_ACTIONS = {
     try {
       await apiCall("/settings/webhook-test", "POST", { webhookUrl });
       showToast("디스코드로 테스트 메시지를 전송했습니다");
-    } catch (e) {}
+    } catch (e) { }
   },
 };
 
@@ -865,7 +872,7 @@ const SUBMIT_ACTIONS = {
       await apiCall("/factions/create", "POST", { code, name, founderName, username, password });
       LAST = { code, factionName: name };
       VIEW = "createDone"; render();
-    } catch (e) {}
+    } catch (e) { }
   },
   "submit-join": async () => {
     const code = document.getElementById("jfCode").value.trim().toUpperCase();
@@ -878,7 +885,7 @@ const SUBMIT_ACTIONS = {
     try {
       await apiCall("/factions/join-request", "POST", { code, name, uid });
       VIEW = "joinSent"; render();
-    } catch (e) {}
+    } catch (e) { }
   },
   "submit-login": async () => {
     const username = document.getElementById("loginUser").value.trim();
@@ -891,7 +898,7 @@ const SUBMIT_ACTIONS = {
       SESSION = res.user;
       localStorage.setItem("bureau_token", TOKEN);
       localStorage.setItem("bureau_session", JSON.stringify(SESSION));
-      
+
       await fetchFactionData();
       TAB = "dash";
     } catch (e) {
@@ -905,7 +912,7 @@ const CHANGE_ACTIONS = {
     try {
       await apiCall(`/members/${el.dataset.id}/rank`, "PATCH", { rank: el.value });
       showToast("계급이 변경되었습니다");
-    } catch (e) {}
+    } catch (e) { }
   },
 };
 
