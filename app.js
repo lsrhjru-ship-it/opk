@@ -407,6 +407,7 @@ function renderDash() {
       ${statCard("누적 내부경고", warnCount, "var(--danger)")}
       ${statCard("등록 공지", DATA.sideNotices.length, "var(--ok)")}
     </div>
+    ${renderRankingPanelHtml("근무 총시간 순위 TOP 5", 5)}
     <div class="panel">
       <div style="padding:14px 20px; border-bottom:1px solid var(--line); font-size:13px; color:var(--muted); font-weight:700;">최근 내부경고</div>
       ${recent.length === 0 ? `<div style="padding:30px; text-align:center; color:var(--muted); font-size:13.5px;">등록된 내부경고가 없습니다.</div>` :
@@ -671,22 +672,20 @@ function computeAttendanceRanking() {
   return Object.values(totals).sort((a, b) => b.minutes - a.minutes);
 }
 
-function renderAttendance() {
-  const logs = [...DATA.attendance].reverse();
-  const cols = "1.2fr 1fr 0.8fr 1.5fr 1.5fr 0.8fr";
+// 근무 총시간 순위 패널 HTML (대시보드/근태 관리 탭에서 공용으로 사용)
+function renderRankingPanelHtml(title, limit) {
   const ranking = computeAttendanceRanking();
+  const list = limit ? ranking.slice(0, limit) : ranking;
 
-  let html = `
-    ${header("근태 관리", "인원들의 출퇴근 기록 및 계급을 확인합니다.")}
-    <div class="panel" style="margin-bottom:18px;">
-      <div style="padding:14px 18px; font-size:13px; font-weight:700; color:var(--muted); border-bottom:1px solid var(--line);">근무 총시간 순위 (근무 중인 경우 현재 시각까지 반영)</div>`;
+  let html = `<div class="panel" style="margin-bottom:18px;">
+    <div style="padding:14px 20px; border-bottom:1px solid var(--line); font-size:13px; color:var(--muted); font-weight:700;">${title}</div>`;
 
-  if (ranking.length === 0) {
+  if (list.length === 0) {
     html += `<div style="padding:24px; text-align:center; color:var(--muted); font-size:13.5px;">근무 기록이 없습니다.</div>`;
   } else {
-    ranking.forEach((r, idx) => {
+    list.forEach((r, idx) => {
       const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : String(idx + 1);
-      html += `<div class="row-hover" style="display:flex; justify-content:space-between; align-items:center; padding:10px 18px; border-top:1px solid var(--line);">
+      html += `<div class="row-hover" style="display:flex; justify-content:space-between; align-items:center; padding:10px 20px; border-top:1px solid var(--line);">
         <div style="display:flex; align-items:center; gap:10px;">
           <span class="mono" style="width:22px; text-align:center; font-weight:700; color:${idx < 3 ? "var(--gold)" : "var(--muted)"};">${medal}</span>
           <span style="font-weight:600;">${r.name}</span>
@@ -697,6 +696,16 @@ function renderAttendance() {
     });
   }
   html += `</div>`;
+  return html;
+}
+
+function renderAttendance() {
+  const logs = [...DATA.attendance].reverse();
+  const cols = "1.2fr 1fr 0.8fr 1.5fr 1.5fr 0.8fr";
+
+  let html = `
+    ${header("근태 관리", "인원들의 출퇴근 기록 및 계급을 확인합니다.")}
+    ${renderRankingPanelHtml("근무 총시간 순위 (근무 중인 경우 현재 시각까지 반영)")}`;
 
   html += `
     <div class="panel">
