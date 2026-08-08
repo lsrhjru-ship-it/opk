@@ -12,6 +12,20 @@ let TAB = "dash";
 let VIEW = "gate";
 let LAST = {};
 
+/* ------------------------------ 직급 분류 헬퍼 ------------------------------ */
+
+function getRankGroup(rank) {
+  if (rank === "위원장" || rank === "부위원장") return "최고관리자";
+  if (["본부장", "총감", "차관보", "사령관"].includes(rank)) return "고위직간부";
+  if (["참모장", "감찰관", "작전관", "지휘관"].includes(rank)) return "일반간부";
+  return "일반직";
+}
+
+function canManageSystem(rank) {
+  const g = getRankGroup(rank);
+  return g === "최고관리자" || g === "고위직간부" || g === "일반간부";
+}
+
 /* ------------------------------ 고유번호 앞 00 제거 헬퍼 ------------------------------ */
 
 function formatBadge(badge) {
@@ -134,18 +148,25 @@ function logout() {
   render();
 }
 
-const TABS = [
-  { key: "dash", label: "대시보드" },
-  { key: "rpreport", label: "📜 RP 보고서" },
-  { key: "lawcalc", label: "⚖️ 법률 계산기" },
-  { key: "members", label: "팩션원 관리" },
-  { key: "attendance", label: "근태 관리" },
-  { key: "notices", label: "사이드 공지" },
-  { key: "apps", label: "가입 신청" },
-  { key: "warn", label: "내부경고" },
-  { key: "accounts", label: "계정 관리" },
-  { key: "settings", label: "설정" },
-];
+function getAvailableTabs() {
+  const isManager = SESSION && canManageSystem(SESSION.rank);
+  const base = [
+    { key: "dash", label: "대시보드" },
+    { key: "rpreport", label: "RP 보고서" },
+    { key: "lawcalc", label: "법률 계산기" },
+    { key: "warn", label: "내부경고" },
+  ];
+  if (isManager) {
+    base.splice(3, 0,
+      { key: "members", label: "팩션원 관리" },
+      { key: "attendance", label: "근태 관리" },
+      { key: "notices", label: "사이드 공지" },
+      { key: "apps", label: "가입 신청" }
+    );
+    base.push({ key: "accounts", label: "계정 관리" }, { key: "settings", label: "설정" });
+  }
+  return base;
+}
 
 /* ------------------------------ 최상위 렌더 ------------------------------ */
 
@@ -233,8 +254,10 @@ function renderJoin() {
       <div class="field"><label>팩션 코드</label><input id="jfCode" class="mono" style="width:100%; letter-spacing:2px;" placeholder="예) A3F9K2" /></div>
       <div class="field" style="margin-top:14px;"><label>이름</label><input id="jfName" style="width:100%;" /></div>
       <div class="field" style="margin-top:14px;"><label>고유번호</label><input id="jfUid" class="mono" style="width:100%;" placeholder="예) 14" /></div>
+      <div class="field" style="margin-top:14px;"><label>사용할 로그인 아이디</label><input id="jfUser" style="width:100%;" autocomplete="username" /></div>
+      <div class="field" style="margin-top:14px;"><label>사용할 비밀번호 (6자 이상)</label><input id="jfPass" type="password" style="width:100%;" autocomplete="new-password" /></div>
       <div id="joinErr" style="font-size:12.5px; color:var(--danger); margin-top:10px; display:none;"></div>
-      <button type="submit" class="btn-gold disp" style="width:100%; padding:12px 0; font-size:15px; margin-top:20px;">가입하기</button>
+      <button type="submit" class="btn-gold disp" style="width:100%; padding:12px 0; font-size:15px; margin-top:20px;">가입 신청</button>
       <button type="button" data-action="goto-gate" class="link-btn" style="display:block; margin:16px auto 0;">← 뒤로</button>
     </form>
   `);
@@ -244,7 +267,7 @@ function renderJoinSent() {
   return authWrap(`
     <div style="text-align:center;">
       <div class="badge ok" style="margin:0 auto 16px; font-size:13px; padding:6px 16px;">요청됨</div>
-      <div style="font-size:15px; line-height:1.7; font-weight:500;">가입 요청이 접수되었습니다.<br/>팩션 담당자의 승인을 기다려주세요.</div>
+      <div style="font-size:15px; line-height:1.7; font-weight:500;">가입 요청이 접수되었습니다.<br/>승인되면 설정하신 아이디로 로그인할 수 있습니다.</div>
       <button data-action="goto-gate" class="btn-ghost disp" style="margin-top:22px; padding:10px 20px;">확인</button>
     </div>
   `);
@@ -270,6 +293,9 @@ function renderShell() {
     ? `<button data-action="toggle-work" class="btn-ghost danger" style="margin-top:10px; width:100%; padding:9px 0; font-size:12.5px; font-weight:600;">퇴근하기 (근무 중)</button>`
     : `<button data-action="toggle-work" class="btn-ghost ok" style="margin-top:10px; width:100%; padding:9px 0; font-size:12.5px; font-weight:600;">출근하기</button>`;
 
+  const tabs = getAvailableTabs();
+  if (!tabs.some(t => t.key === TAB)) TAB = "dash";
+
   return `
   <div style="min-height:100vh; display:flex; position:relative; background:var(--bg);">
     <aside class="panel" style="width:230px; margin:16px 0 16px 16px; border-radius:var(--radius-lg); display:flex; flex-direction:column; flex-shrink:0;">
@@ -281,7 +307,7 @@ function renderShell() {
         </div>
       </div>
       <nav style="padding:14px; display:flex; flex-direction:column; gap:4px; flex:1;">
-        ${TABS.map(t => `<button class="tab-btn ${TAB === t.key ? 'active' : ''}" data-action="switch-tab" data-tab="${t.key}">${t.label}</button>`).join("")}
+        ${tabs.map(t => `<button class="tab-btn ${TAB === t.key ? 'active' : ''}" data-action="switch-tab" data-tab="${t.key}">${t.label}</button>`).join("")}
       </nav>
       <div style="padding:16px; border-top:1px solid var(--line); background:var(--panel2); border-radius:0 0 var(--radius-lg) var(--radius-lg);">
         <div style="font-size:13.5px; font-weight:700;">${SESSION.name}</div>
@@ -300,13 +326,13 @@ function renderTab() {
   if (TAB === "dash") return renderDash();
   if (TAB === "rpreport") return renderRpReport();
   if (TAB === "lawcalc") return renderLawCalc();
-  if (TAB === "members") return renderMembers();
-  if (TAB === "attendance") return renderAttendance();
-  if (TAB === "notices") return renderNotices();
-  if (TAB === "apps") return renderApps();
+  if (TAB === "members" && canManageSystem(SESSION.rank)) return renderMembers();
+  if (TAB === "attendance" && canManageSystem(SESSION.rank)) return renderAttendance();
+  if (TAB === "notices" && canManageSystem(SESSION.rank)) return renderNotices();
+  if (TAB === "apps" && canManageSystem(SESSION.rank)) return renderApps();
   if (TAB === "warn") return renderWarn();
-  if (TAB === "accounts") return renderAccounts();
-  if (TAB === "settings") return renderSettings();
+  if (TAB === "accounts" && canManageSystem(SESSION.rank)) return renderAccounts();
+  if (TAB === "settings" && canManageSystem(SESSION.rank)) return renderSettings();
   return "";
 }
 
@@ -334,9 +360,17 @@ function statCard(label, value, color) {
 
 function renderDash() {
   const activeCount = DATA.accounts.filter(a => a.status === "재직").length;
-  const pendingApps = DATA.applications.filter(a => a.status === "요청됨").length;
+  const pendingApps = canManageSystem(SESSION.rank) ? DATA.applications.filter(a => a.status === "요청됨").length : 0;
   const warnCount = DATA.warnings.length;
   const recent = [...DATA.warnings].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
+
+  let statsHtml = `
+    ${statCard("재직 팩션원", activeCount)}
+    ${canManageSystem(SESSION.rank) ? statCard("대기 중 가입신청", pendingApps, "var(--steel)") : ""}
+    ${statCard("누적 내부경고", warnCount, "var(--danger)")}
+    ${canManageSystem(SESSION.rank) ? statCard("등록 공지", DATA.sideNotices.length, "var(--ok)") : ""}
+  `;
+
   return `
     ${header("대시보드", `${SESSION.rank} ${SESSION.name} 님, 오늘도 수고 많으십니다.`)}
     <div class="panel" style="display:flex; align-items:center; justify-content:space-between; padding:14px 20px; margin-bottom:18px;">
@@ -344,10 +378,7 @@ function renderDash() {
       <span class="mono" style="font-size:15px; font-weight:700; color:var(--gold); letter-spacing:2px;">${DATA.code}</span>
     </div>
     <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:24px;">
-      ${statCard("재직 팩션원", activeCount)}
-      ${statCard("대기 중 가입신청", pendingApps, "var(--steel)")}
-      ${statCard("누적 내부경고", warnCount, "var(--danger)")}
-      ${statCard("등록 공지", DATA.sideNotices.length, "var(--ok)")}
+      ${statsHtml}
     </div>
     <div class="panel">
       <div style="padding:14px 20px; border-bottom:1px solid var(--line); font-size:13px; color:var(--muted); font-weight:700;">최근 내부경고</div>
@@ -380,20 +411,20 @@ function renderRpReport() {
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
           <div class="field">
             <label>상대방 팩션</label>
-            <input id="rpTargetFaction" style="width:100%;" placeholder="예) 마피아 / 삼합회 / 시민" required />
+            <input id="rpTargetFaction" style="width:100%;" placeholder="예)시민 / 조직" required />
           </div>
           <div class="field">
             <label>결과</label>
-            <input id="rpResult" style="width:100%;" placeholder="예) 검거 완료 / 무력 진압 / 상황 종료" required />
+            <input id="rpResult" style="width:100%;" placeholder="예) 승리 / 패배" required />
           </div>
         </div>
 
         <div class="field" style="margin-bottom:20px;">
-          <label>상세 내용 (디스코드 코드블럭 \`\`\`내용\`\`\` 으로 전송됨)</label>
+          <label>상세 내용</label>
           <textarea id="rpContent" style="width:100%; min-height:160px; font-family:monospace; line-height:1.5;" placeholder="RP 진행 내역 및 상세 상황을 적어주세요..." required></textarea>
         </div>
 
-        <button type="submit" class="btn-gold disp" style="width:100%; padding:13px 0; font-size:15px;">📜 디스코드로 RP 보고서 전송</button>
+        <button type="submit" class="btn-gold disp" style="width:100%; padding:13px 0; font-size:15px;">디스코드로 RP 보고서 전송</button>
       </form>
     </div>`;
 }
@@ -648,7 +679,7 @@ function renderApps() {
     <div class="panel" style="margin-bottom:24px;">
       ${pending.length === 0 ? `<div style="padding:24px; text-align:center; color:var(--muted); font-size:13.5px;">대기 중인 신청이 없습니다.</div>` :
       pending.map(a => `<div class="row-hover" style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-top:1px solid var(--line);">
-          <div><div style="font-size:14px; font-weight:600;">${a.name} <span class="mono" style="color:var(--muted); font-size:12px; font-weight:400;">· 고유번호 ${formatBadge(a.uid)}</span></div></div>
+          <div><div style="font-size:14px; font-weight:600;">${a.name} <span class="mono" style="color:var(--muted); font-size:12px; font-weight:400;">· 고유번호 ${formatBadge(a.uid)} (ID: ${a.username || '-'})</span></div></div>
           <div style="display:flex; gap:8px; align-items:center;">
             <span class="badge ok">요청됨</span>
             <button class="icon-btn" data-action="decide-app" data-id="${a.id}" data-status="승인" style="border-color:var(--ok); color:var(--ok);">✓</button>
@@ -666,16 +697,56 @@ function renderApps() {
 }
 
 function renderWarn() {
-  return `
-    ${header("내부경고 관리", `누적 ${DATA.warnings.length}건`)}
+  const isManager = canManageSystem(SESSION.rank);
+
+  const membersByRank = {};
+  RANKS.forEach(r => membersByRank[r] = []);
+
+  DATA.accounts.filter(a => a.status === "재직").forEach(a => {
+    if (membersByRank[a.rank]) {
+      membersByRank[a.rank].push(a);
+    } else {
+      if (!membersByRank["기타"]) membersByRank["기타"] = [];
+      membersByRank["기타"].push(a);
+    }
+  });
+
+  let targetOptions = `<option value="">대상자를 선택하세요</option>`;
+  RANKS.forEach(r => {
+    if (membersByRank[r] && membersByRank[r].length > 0) {
+      targetOptions += `<optgroup label="${r}">`;
+      membersByRank[r].forEach(a => {
+        targetOptions += `<option value="${a.name}">${a.name} (No.${formatBadge(a.badge)})</option>`;
+      });
+      targetOptions += `</optgroup>`;
+    }
+  });
+  if (membersByRank["기타"] && membersByRank["기타"].length > 0) {
+    targetOptions += `<optgroup label="기타">`;
+    membersByRank["기타"].forEach(a => {
+      targetOptions += `<option value="${a.name}">${a.name} (No.${formatBadge(a.badge)})</option>`;
+    });
+    targetOptions += `</optgroup>`;
+  }
+
+  const registerPanel = isManager ? `
     <div class="panel" style="padding:18px; margin-bottom:22px; display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
-      <div class="field"><label>대상자</label><input id="wTarget" /></div>
-      <div class="field"><label>사유</label><input id="wReason" style="width:280px;" /></div>
+      <div class="field">
+        <label>대상자</label>
+        <select id="wTarget" style="width:180px;">
+          ${targetOptions}
+        </select>
+      </div>
+      <div class="field"><label>사유</label><input id="wReason" style="width:280px;" placeholder="경고 사유 입력" /></div>
       <div class="field"><label>수위</label>
         <select id="wSeverity"><option>경고</option><option>중경고</option><option>최종경고</option></select>
       </div>
       <button data-action="submit-warn" class="btn-gold">등록</button>
-    </div>
+    </div>` : "";
+
+  return `
+    ${header("내부경고 관리", `누적 ${DATA.warnings.length}건`)}
+    ${registerPanel}
     <div class="panel">
       ${DATA.warnings.length === 0 ? `<div style="padding:28px; text-align:center; color:var(--muted); font-size:13.5px;">등록된 내부경고가 없습니다.</div>` :
       [...DATA.warnings].reverse().map(w => `<div class="row-hover" style="display:flex; justify-content:space-between; align-items:center; padding:12px 18px; border-top:1px solid var(--line);">
@@ -683,7 +754,7 @@ function renderWarn() {
           <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:3px;">${w.date} · 발부: ${w.issued_by || w.issuedBy}</div></div>
           <div style="display:flex; align-items:center; gap:10px;">
             <span class="badge ${w.severity === "최종경고" ? "danger" : w.severity === "중경고" ? "gold" : "steel"}">${w.severity}</span>
-            <button class="icon-btn" data-action="remove-warn" data-id="${w.id}">🗑</button>
+            ${isManager ? `<button class="icon-btn" data-action="remove-warn" data-id="${w.id}">🗑</button>` : ''}
           </div>
         </div>`).join("")}
     </div>`;
@@ -705,7 +776,7 @@ function renderAccounts() {
     ${header("계정 관리", "로그인 아이디와 비밀번호를 관리합니다")}
     <div class="panel">${rows}</div>
     <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:14px; line-height:1.7;">
-      ※ 비밀번호는 SQLite 데이터베이스에 bcrypt 알고리즘으로 암호화되어 안전하게 보관됩니다.
+      ※ 비밀번호는 안전하게 암호화되어 보관됩니다.
     </div>`;
 }
 
@@ -723,7 +794,7 @@ function renderSettings() {
         <input id="webhookUrl" class="mono" style="width:100%; font-size:13px;" placeholder="https://discord.com/api/webhooks/..." value="${DATA.webhookUrl || ""}" />
       </div>
       <div class="field">
-        <label>📜 RP 보고서 전용 웹훅 URL</label>
+        <label>RP 보고서 전용 웹훅 URL</label>
         <input id="rpWebhookUrl" class="mono" style="width:100%; font-size:13px;" placeholder="https://discord.com/api/webhooks/..." value="${DATA.rpWebhookUrl || ""}" />
       </div>
       <div style="display:flex; gap:10px; margin-top:14px;">
@@ -745,7 +816,14 @@ const CLICK_ACTIONS = {
   "goto-join": () => { VIEW = "join"; render(); },
   "goto-login": () => { VIEW = "login"; render(); },
   "goto-gate": () => { VIEW = "gate"; render(); },
-  "switch-tab": (el) => { TAB = el.dataset.tab; refreshTab(); },
+
+  "switch-tab": (el) => {
+    TAB = el.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    el.classList.add('active');
+    refreshTab();
+  },
+
   "logout": () => logout(),
 
   "law-cat": (el) => { LAW_CAT = el.dataset.cat; refreshTab(); },
@@ -826,7 +904,7 @@ const CLICK_ACTIONS = {
 
     try {
       const res = await apiCall("/members", "POST", { name, badge, rank });
-      showToast(`${name} 팩션원 등록 완료 (초기 계정 ${res.username})`);
+      showToast(`${name} 팩션원 등록 완료`);
       document.getElementById("addMemberForm").style.display = "none";
       await fetchFactionData();
     } catch (e) { }
@@ -855,6 +933,7 @@ const CLICK_ACTIONS = {
     const targetName = document.getElementById("wTarget").value.trim();
     const reason = document.getElementById("wReason").value.trim();
     const severity = document.getElementById("wSeverity").value;
+
     if (!targetName || !reason) { showToast("대상자와 사유를 입력하세요", "danger"); return; }
 
     try {
@@ -934,12 +1013,18 @@ const SUBMIT_ACTIONS = {
     const code = document.getElementById("jfCode").value.trim().toUpperCase();
     const name = document.getElementById("jfName").value.trim();
     const uid = formatBadge(document.getElementById("jfUid").value.trim());
+    const username = document.getElementById("jfUser").value.trim();
+    const password = document.getElementById("jfPass").value;
     const err = document.getElementById("joinErr");
 
-    if (!code || !name || !uid) { err.textContent = "모든 항목을 입력하세요"; err.style.display = "block"; return; }
+    if (!code || !name || !uid || !username || password.length < 6) {
+      err.textContent = "모든 항목을 입력하세요 (비밀번호 6자 이상)";
+      err.style.display = "block";
+      return;
+    }
 
     try {
-      await apiCall("/factions/join-request", "POST", { code, name, uid });
+      await apiCall("/factions/join-request", "POST", { code, name, uid, username, password });
       VIEW = "joinSent"; render();
     } catch (e) { }
   },
