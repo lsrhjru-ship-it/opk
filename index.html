@@ -6,23 +6,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>보안국 인트라넷</title>
 
-    <!-- 🛡️ 서버 내 로고 이미지 연결 (파비콘 / 웹탭 아이콘) -->
-    <link rel="icon" href="/logo.png" type="image/png" />
-
     <!-- 디스코드 / SNS 링크 미리보기 (Open Graph) 설정 -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="보안국 인트라넷" />
     <meta property="og:title" content="보안국 인트라넷" />
-    <meta property="og:description" content="보안국 통합 관제, 근태 관리 및 법률 검색 시스템" />
-    <meta property="og:image" content="/logo.png" />
+    <meta property="og:description" content="보안국" />
+    <!-- 썸네일로 띄울 이미지 URL (보안국 젤리 로고) -->
+    <meta property="og:image"
+        content="https://cdn.discordapp.com/attachments/1532756181557313706/1532757610464411719/3c9c4182b3e7bae0.png?ex=6a77e683&is=6a769503&hm=7dfc4b4e888cda0fde247badee027883426957dc6dd57700c1cbcdc28b96dacb" />
+    <!-- 디스코드 임베드 좌측 포인트 라인 색상 (보안국 시그니처 골드색) -->
     <meta name="theme-color" content="#A87030" />
 
-    <!-- Pretendard 폰트 & XLSX 라이브러리 -->
+    <!-- 고급 Pretendard 폰트 & 엑셀 라이브러리 -->
     <link rel="stylesheet" as="style" crossorigin
         href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
-    <!-- CSS 연결 -->
+    <!-- 분리된 CSS 파일 연결 -->
     <link rel="stylesheet" href="style.css" />
 </head>
 
@@ -30,7 +30,7 @@
     <div id="app"></div>
     <div id="toast" style="display:none;"></div>
 
-    <!-- JS 연결 -->
+    <!-- 분리된 JS 파일 연결 -->
     <script src="app.js"></script>
 </body>
 
