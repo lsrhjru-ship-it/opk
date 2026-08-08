@@ -1,8 +1,11 @@
 /* ============================================================================
    보안국 인트라넷 — 백엔드 API 연동 + 법률 계산기 + RP 보고서 통합 버전
+   (계급별 등급 분류 및 권한 관리 시스템 적용)
    ============================================================================ */
 
 const API_BASE = "https://lsrhjru.wisp.uno/api";
+
+// 전체 계급 목록
 const RANKS = ["위원장", "부위원장", "본부장", "총감", "차관보", "사령관", "참모장", "감찰관", "작전관", "지휘관", "특별보안관", "감독관", "수사관", "보안관", "교육생"];
 
 let TOKEN = localStorage.getItem("bureau_token") || null;
@@ -12,18 +15,49 @@ let TAB = "dash";
 let VIEW = "gate";
 let LAST = {};
 
-/* ------------------------------ 직급 분류 헬퍼 ------------------------------ */
+/* ------------------------------ 계급 및 권한 유틸 ------------------------------ */
 
-function getRankGroup(rank) {
-  if (rank === "위원장" || rank === "부위원장") return "최고관리자";
-  if (["본부장", "총감", "차관보", "사령관"].includes(rank)) return "고위직간부";
-  if (["참모장", "감찰관", "작전관", "지휘관"].includes(rank)) return "일반간부";
+// 계급에 따른 등급 분류 헬퍼 함수
+function getRankCategory(rank) {
+  if (["위원장", "부위원장"].includes(rank)) return "임원직 간부";
+  if (["본부장", "총감", "차관보", "사령관"].includes(rank)) return "고위직 간부";
+  if (["참모장", "감찰관", "작전관", "지휘관"].includes(rank)) return "일반 간부직";
   return "일반직";
 }
 
-function canManageSystem(rank) {
-  const g = getRankGroup(rank);
-  return g === "최고관리자" || g === "고위직간부" || g === "일반간부";
+// 특정 기능 권한 보유 여부 확인 함수
+// permKey: 'members' | 'attendance' | 'notices' | 'apps' | 'warn'
+function hasPermission(permKey) {
+  if (!SESSION) return false;
+  // 팩션장(isOwner)이거나 위원장인 경우 모든 권한 허용
+  if (SESSION.isOwner || SESSION.rank === "위원장") return true;
+  
+  // 부여된 권한 목록 배열 확인
+  const userPerms = SESSION.permissions || [];
+  return userPerms.includes(permKey);
+}
+
+// 권한에 따른 접근 가능한 탭 목록 반환
+function getAccessibleTabs() {
+  const baseTabs = [
+    { key: "dash", label: "대시보드" },
+    { key: "rpreport", label: "RP 보고서" },
+    { key: "lawcalc", label: "법률 계산기" },
+  ];
+
+  if (hasPermission("members")) baseTabs.push({ key: "members", label: "팩션원 관리" });
+  if (hasPermission("attendance")) baseTabs.push({ key: "attendance", label: "근태 관리" });
+  if (hasPermission("notices")) baseTabs.push({ key: "notices", label: "사이드 공지" });
+  if (hasPermission("apps")) baseTabs.push({ key: "apps", label: "가입 신청" });
+  if (hasPermission("warn")) baseTabs.push({ key: "warn", label: "내부경고" });
+
+  // 팩션장/최고 임원 전용 관리 메뉴
+  if (SESSION && (SESSION.isOwner || SESSION.rank === "위원장")) {
+    baseTabs.push({ key: "accounts", label: "계정/권한 관리" });
+    baseTabs.push({ key: "settings", label: "설정" });
+  }
+
+  return baseTabs;
 }
 
 /* ------------------------------ 고유번호 앞 00 제거 헬퍼 ------------------------------ */
@@ -148,26 +182,6 @@ function logout() {
   render();
 }
 
-function getAvailableTabs() {
-  const isManager = SESSION && canManageSystem(SESSION.rank);
-  const base = [
-    { key: "dash", label: "대시보드" },
-    { key: "rpreport", label: "RP 보고서" },
-    { key: "lawcalc", label: "법률 계산기" },
-    { key: "warn", label: "내부경고" },
-  ];
-  if (isManager) {
-    base.splice(3, 0,
-      { key: "members", label: "팩션원 관리" },
-      { key: "attendance", label: "근태 관리" },
-      { key: "notices", label: "사이드 공지" },
-      { key: "apps", label: "가입 신청" }
-    );
-    base.push({ key: "accounts", label: "계정 관리" }, { key: "settings", label: "설정" });
-  }
-  return base;
-}
-
 /* ------------------------------ 최상위 렌더 ------------------------------ */
 
 function render() {
@@ -185,7 +199,12 @@ function render() {
     app.innerHTML = `<div style="min-height:100vh; display:flex; align-items:center; justify-content:center; color:var(--muted);">데이터를 불러오는 중입니다...</div>`;
     return;
   }
-  app.innerHTML = renderShell();
+  
+  // 현재 탭이 권한 밖으로 밀려났다면 dash로 초기화
+  const activeTabs = getAccessibleTabs();
+  if (!activeTabs.find(t => t.key === TAB)) TAB = "dash";
+
+  app.innerHTML = renderShell(activeTabs);
 }
 
 function refreshTab() {
@@ -254,10 +273,8 @@ function renderJoin() {
       <div class="field"><label>팩션 코드</label><input id="jfCode" class="mono" style="width:100%; letter-spacing:2px;" placeholder="예) A3F9K2" /></div>
       <div class="field" style="margin-top:14px;"><label>이름</label><input id="jfName" style="width:100%;" /></div>
       <div class="field" style="margin-top:14px;"><label>고유번호</label><input id="jfUid" class="mono" style="width:100%;" placeholder="예) 14" /></div>
-      <div class="field" style="margin-top:14px;"><label>사용할 로그인 아이디</label><input id="jfUser" style="width:100%;" autocomplete="username" /></div>
-      <div class="field" style="margin-top:14px;"><label>사용할 비밀번호 (6자 이상)</label><input id="jfPass" type="password" style="width:100%;" autocomplete="new-password" /></div>
       <div id="joinErr" style="font-size:12.5px; color:var(--danger); margin-top:10px; display:none;"></div>
-      <button type="submit" class="btn-gold disp" style="width:100%; padding:12px 0; font-size:15px; margin-top:20px;">가입 신청</button>
+      <button type="submit" class="btn-gold disp" style="width:100%; padding:12px 0; font-size:15px; margin-top:20px;">가입하기</button>
       <button type="button" data-action="goto-gate" class="link-btn" style="display:block; margin:16px auto 0;">← 뒤로</button>
     </form>
   `);
@@ -267,7 +284,7 @@ function renderJoinSent() {
   return authWrap(`
     <div style="text-align:center;">
       <div class="badge ok" style="margin:0 auto 16px; font-size:13px; padding:6px 16px;">요청됨</div>
-      <div style="font-size:15px; line-height:1.7; font-weight:500;">가입 요청이 접수되었습니다.<br/>승인되면 설정하신 아이디로 로그인할 수 있습니다.</div>
+      <div style="font-size:15px; line-height:1.7; font-weight:500;">가입 요청이 접수되었습니다.<br/>팩션 담당자의 승인을 기다려주세요.</div>
       <button data-action="goto-gate" class="btn-ghost disp" style="margin-top:22px; padding:10px 20px;">확인</button>
     </div>
   `);
@@ -287,14 +304,11 @@ function renderLogin() {
 
 /* ------------------------------ 로그인 후 셸/탭 ------------------------------ */
 
-function renderShell() {
+function renderShell(tabs) {
   const isWorking = DATA.attendance.find(a => a.user_id === SESSION.id && !a.clock_out_time);
   const workBtnHtml = isWorking
     ? `<button data-action="toggle-work" class="btn-ghost danger" style="margin-top:10px; width:100%; padding:9px 0; font-size:12.5px; font-weight:600;">퇴근하기 (근무 중)</button>`
     : `<button data-action="toggle-work" class="btn-ghost ok" style="margin-top:10px; width:100%; padding:9px 0; font-size:12.5px; font-weight:600;">출근하기</button>`;
-
-  const tabs = getAvailableTabs();
-  if (!tabs.some(t => t.key === TAB)) TAB = "dash";
 
   return `
   <div style="min-height:100vh; display:flex; position:relative; background:var(--bg);">
@@ -326,13 +340,13 @@ function renderTab() {
   if (TAB === "dash") return renderDash();
   if (TAB === "rpreport") return renderRpReport();
   if (TAB === "lawcalc") return renderLawCalc();
-  if (TAB === "members" && canManageSystem(SESSION.rank)) return renderMembers();
-  if (TAB === "attendance" && canManageSystem(SESSION.rank)) return renderAttendance();
-  if (TAB === "notices" && canManageSystem(SESSION.rank)) return renderNotices();
-  if (TAB === "apps" && canManageSystem(SESSION.rank)) return renderApps();
+  if (TAB === "members") return renderMembers();
+  if (TAB === "attendance") return renderAttendance();
+  if (TAB === "notices") return renderNotices();
+  if (TAB === "apps") return renderApps();
   if (TAB === "warn") return renderWarn();
-  if (TAB === "accounts" && canManageSystem(SESSION.rank)) return renderAccounts();
-  if (TAB === "settings" && canManageSystem(SESSION.rank)) return renderSettings();
+  if (TAB === "accounts") return renderAccounts();
+  if (TAB === "settings") return renderSettings();
   return "";
 }
 
@@ -360,17 +374,9 @@ function statCard(label, value, color) {
 
 function renderDash() {
   const activeCount = DATA.accounts.filter(a => a.status === "재직").length;
-  const pendingApps = canManageSystem(SESSION.rank) ? DATA.applications.filter(a => a.status === "요청됨").length : 0;
+  const pendingApps = DATA.applications.filter(a => a.status === "요청됨").length;
   const warnCount = DATA.warnings.length;
   const recent = [...DATA.warnings].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
-
-  let statsHtml = `
-    ${statCard("재직 팩션원", activeCount)}
-    ${canManageSystem(SESSION.rank) ? statCard("대기 중 가입신청", pendingApps, "var(--steel)") : ""}
-    ${statCard("누적 내부경고", warnCount, "var(--danger)")}
-    ${canManageSystem(SESSION.rank) ? statCard("등록 공지", DATA.sideNotices.length, "var(--ok)") : ""}
-  `;
-
   return `
     ${header("대시보드", `${SESSION.rank} ${SESSION.name} 님, 오늘도 수고 많으십니다.`)}
     <div class="panel" style="display:flex; align-items:center; justify-content:space-between; padding:14px 20px; margin-bottom:18px;">
@@ -378,7 +384,10 @@ function renderDash() {
       <span class="mono" style="font-size:15px; font-weight:700; color:var(--gold); letter-spacing:2px;">${DATA.code}</span>
     </div>
     <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:24px;">
-      ${statsHtml}
+      ${statCard("재직 팩션원", activeCount)}
+      ${statCard("대기 중 가입신청", pendingApps, "var(--steel)")}
+      ${statCard("누적 내부경고", warnCount, "var(--danger)")}
+      ${statCard("등록 공지", DATA.sideNotices.length, "var(--ok)")}
     </div>
     <div class="panel">
       <div style="padding:14px 20px; border-bottom:1px solid var(--line); font-size:13px; color:var(--muted); font-weight:700;">최근 내부경고</div>
@@ -577,13 +586,26 @@ function renderMembers() {
 
 function renderMemberRows(list) {
   const cols = "1.4fr 0.8fr 1fr 0.8fr 1fr 0.8fr";
-  let html = `<div class="table-head" style="grid-template-columns:${cols};"><span>이름</span><span>고유번호</span><span>계급</span><span>상태</span><span>가입일</span><span></span></div>`;
+  let html = `<div class="table-head" style="grid-template-columns:${cols};"><span>이름</span><span>고유번호</span><span>계급/분류</span><span>상태</span><span>가입일</span><span></span></div>`;
   if (list.length === 0) { html += `<div style="padding:28px; text-align:center; color:var(--muted); font-size:13.5px;">검색 결과가 없습니다.</div>`; return html; }
+  
   list.forEach(a => {
-    html += `<div class="table-row row-hover" style="grid-template-columns:${cols};" data-id="${a.id}">
+    // 계급에 따른 등급 분류 추출
+    const category = getRankCategory(a.rank);
+    let catBadgeColor = "var(--muted)";
+    if (category === "임원직 간부") catBadgeColor = "var(--gold)";
+    else if (category === "고위직 간부") catBadgeColor = "#e74c3c";
+    else if (category === "일반 간부직") catBadgeColor = "#3498db";
+
+    html += `<div class="table-row row-hover" style="grid-template-columns:${cols}; align-items:center;" data-id="${a.id}">
       <span style="font-weight:600;">${a.name}</span>
       <span class="mono" style="color:var(--gold); font-weight:600;">${formatBadge(a.badge)}</span>
-      <select data-action="change-rank" data-id="${a.id}" style="padding:5px 8px; font-size:12.5px;">${RANKS.map(r => `<option value="${r}" ${r === a.rank ? "selected" : ""}>${r}</option>`).join("")}</select>
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <select data-action="change-rank" data-id="${a.id}" style="padding:4px 6px; font-size:12px; width:100%;">
+          ${RANKS.map(r => `<option value="${r}" ${r === a.rank ? "selected" : ""}>${r}</option>`).join("")}
+        </select>
+        <span style="font-size:11px; color:${catBadgeColor}; font-weight:600;">[${category}]</span>
+      </div>
       <span class="badge ${a.status === "재직" ? "ok" : "danger"}">${a.status}</span>
       <span class="mono" style="color:var(--muted); font-size:12px;">${a.join_date || a.joinDate || "-"}</span>
       <button class="btn-ghost" data-action="toggle-status" data-id="${a.id}" style="padding:5px 12px; font-size:12px; justify-self:start;">${a.status === "재직" ? "해임 처리" : "복직 처리"}</button>
@@ -679,7 +701,7 @@ function renderApps() {
     <div class="panel" style="margin-bottom:24px;">
       ${pending.length === 0 ? `<div style="padding:24px; text-align:center; color:var(--muted); font-size:13.5px;">대기 중인 신청이 없습니다.</div>` :
       pending.map(a => `<div class="row-hover" style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-top:1px solid var(--line);">
-          <div><div style="font-size:14px; font-weight:600;">${a.name} <span class="mono" style="color:var(--muted); font-size:12px; font-weight:400;">· 고유번호 ${formatBadge(a.uid)} (ID: ${a.username || '-'})</span></div></div>
+          <div><div style="font-size:14px; font-weight:600;">${a.name} <span class="mono" style="color:var(--muted); font-size:12px; font-weight:400;">· 고유번호 ${formatBadge(a.uid)}</span></div></div>
           <div style="display:flex; gap:8px; align-items:center;">
             <span class="badge ok">요청됨</span>
             <button class="icon-btn" data-action="decide-app" data-id="${a.id}" data-status="승인" style="border-color:var(--ok); color:var(--ok);">✓</button>
@@ -697,8 +719,6 @@ function renderApps() {
 }
 
 function renderWarn() {
-  const isManager = canManageSystem(SESSION.rank);
-
   const membersByRank = {};
   RANKS.forEach(r => membersByRank[r] = []);
 
@@ -729,7 +749,8 @@ function renderWarn() {
     targetOptions += `</optgroup>`;
   }
 
-  const registerPanel = isManager ? `
+  return `
+    ${header("내부경고 관리", `누적 ${DATA.warnings.length}건`)}
     <div class="panel" style="padding:18px; margin-bottom:22px; display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
       <div class="field">
         <label>대상자</label>
@@ -742,11 +763,7 @@ function renderWarn() {
         <select id="wSeverity"><option>경고</option><option>중경고</option><option>최종경고</option></select>
       </div>
       <button data-action="submit-warn" class="btn-gold">등록</button>
-    </div>` : "";
-
-  return `
-    ${header("내부경고 관리", `누적 ${DATA.warnings.length}건`)}
-    ${registerPanel}
+    </div>
     <div class="panel">
       ${DATA.warnings.length === 0 ? `<div style="padding:28px; text-align:center; color:var(--muted); font-size:13.5px;">등록된 내부경고가 없습니다.</div>` :
       [...DATA.warnings].reverse().map(w => `<div class="row-hover" style="display:flex; justify-content:space-between; align-items:center; padding:12px 18px; border-top:1px solid var(--line);">
@@ -754,29 +771,53 @@ function renderWarn() {
           <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:3px;">${w.date} · 발부: ${w.issued_by || w.issuedBy}</div></div>
           <div style="display:flex; align-items:center; gap:10px;">
             <span class="badge ${w.severity === "최종경고" ? "danger" : w.severity === "중경고" ? "gold" : "steel"}">${w.severity}</span>
-            ${isManager ? `<button class="icon-btn" data-action="remove-warn" data-id="${w.id}">🗑</button>` : ''}
+            <button class="icon-btn" data-action="remove-warn" data-id="${w.id}">🗑</button>
           </div>
         </div>`).join("")}
     </div>`;
 }
 
 function renderAccounts() {
-  const cols = "1fr 1fr 1.4fr 0.6fr 0.5fr";
-  let rows = `<div class="table-head" style="grid-template-columns:${cols};"><span>이름</span><span>아이디</span><span>새 비밀번호</span><span></span><span></span></div>`;
+  const cols = "1fr 1fr 1.2fr 2fr 0.5fr";
+  let rows = `<div class="table-head" style="grid-template-columns:${cols};"><span>이름</span><span>아이디</span><span>새 비밀번호</span><span>메뉴 권한 할당 (팩션장/임원 제외)</span><span></span></div>`;
+  
+  const PERM_LABELS = { members: "팩션원", attendance: "근태", notices: "공지", apps: "가입", warn: "경고" };
+
   DATA.accounts.forEach(a => {
-    rows += `<div class="table-row row-hover" style="grid-template-columns:${cols};">
+    const userPerms = a.permissions || [];
+    const isTopAdmin = (a.rank === "위원장" || a.isOwner);
+
+    let permHtml = `<div style="display:flex; gap:8px; flex-wrap:wrap; font-size:11.5px;">`;
+    if (isTopAdmin) {
+      permHtml += `<span style="color:var(--gold); font-weight:bold;">모든 권한 보유 (임원직/팩션장)</span>`;
+    } else {
+      Object.entries(PERM_LABELS).forEach(([key, label]) => {
+        const checked = userPerms.includes(key) ? "checked" : "";
+        permHtml += `<label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+                      <input type="checkbox" data-action="toggle-permission" data-id="${a.id}" data-perm="${key}" ${checked}> ${label}
+                    </label>`;
+      });
+    }
+    permHtml += `</div>`;
+
+    rows += `<div class="table-row row-hover" style="grid-template-columns:${cols}; align-items:center;">
       <span style="font-weight:600;">${a.name}${a.id === SESSION.id ? '<span class="mono" style="color:var(--gold); font-size:11px;"> (나)</span>' : ''}</span>
       <span class="mono" style="color:var(--muted);">${a.username}</span>
-      <input class="pwInput" data-id="${a.id}" placeholder="변경할 비밀번호" style="padding:6px 10px; font-size:12.5px;" />
-      <button class="btn-ghost" data-action="change-password" data-id="${a.id}" style="padding:6px 12px; font-size:12px;">변경</button>
+      <div style="display:flex; gap:6px;">
+        <input class="pwInput" data-id="${a.id}" placeholder="변경할 비밀번호" style="padding:6px 10px; font-size:12px; width:100%;" />
+        <button class="btn-ghost" data-action="change-password" data-id="${a.id}" style="padding:6px 10px; font-size:12px; white-space:nowrap;">변경</button>
+      </div>
+      ${permHtml}
       <button class="icon-btn" data-action="remove-account" data-id="${a.id}">🗑</button>
     </div>`;
   });
+
   return `
-    ${header("계정 관리", "로그인 아이디와 비밀번호를 관리합니다")}
+    ${header("계정 및 권한 관리", "로그인 정보 및 하위 계급자들의 특정 메뉴 접근 권한을 관리합니다")}
     <div class="panel">${rows}</div>
     <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:14px; line-height:1.7;">
-      ※ 비밀번호는 안전하게 암호화되어 보관됩니다.
+      ※ 비밀번호는 SQLite 데이터베이스에 bcrypt 알고리즘으로 암호화되어 안전하게 보관됩니다.<br/>
+      ※ 체크박스를 클릭하면 권한이 즉시 서버로 반영됩니다.
     </div>`;
 }
 
@@ -889,7 +930,9 @@ const CLICK_ACTIONS = {
     f.style.display = f.style.display === "none" ? "flex" : "none";
   },
   "export-members": () => {
-    const ws = XLSX.utils.json_to_sheet(DATA.accounts.map(a => ({ 이름: a.name, 고유번호: formatBadge(a.badge), 계급: a.rank, 상태: a.status, 아이디: a.username, 가입일: a.join_date || a.joinDate })));
+    const ws = XLSX.utils.json_to_sheet(DATA.accounts.map(a => ({ 
+      이름: a.name, 고유번호: formatBadge(a.badge), 계급: a.rank, 등급: getRankCategory(a.rank), 상태: a.status, 아이디: a.username, 가입일: a.join_date || a.joinDate 
+    })));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "팩션원명단");
     XLSX.writeFile(wb, `${DATA.name}_팩션원명단.xlsx`);
@@ -904,7 +947,7 @@ const CLICK_ACTIONS = {
 
     try {
       const res = await apiCall("/members", "POST", { name, badge, rank });
-      showToast(`${name} 팩션원 등록 완료`);
+      showToast(`${name} 팩션원 등록 완료 (초기 계정 ${res.username})`);
       document.getElementById("addMemberForm").style.display = "none";
       await fetchFactionData();
     } catch (e) { }
@@ -1013,18 +1056,12 @@ const SUBMIT_ACTIONS = {
     const code = document.getElementById("jfCode").value.trim().toUpperCase();
     const name = document.getElementById("jfName").value.trim();
     const uid = formatBadge(document.getElementById("jfUid").value.trim());
-    const username = document.getElementById("jfUser").value.trim();
-    const password = document.getElementById("jfPass").value;
     const err = document.getElementById("joinErr");
 
-    if (!code || !name || !uid || !username || password.length < 6) {
-      err.textContent = "모든 항목을 입력하세요 (비밀번호 6자 이상)";
-      err.style.display = "block";
-      return;
-    }
+    if (!code || !name || !uid) { err.textContent = "모든 항목을 입력하세요"; err.style.display = "block"; return; }
 
     try {
-      await apiCall("/factions/join-request", "POST", { code, name, uid, username, password });
+      await apiCall("/factions/join-request", "POST", { code, name, uid });
       VIEW = "joinSent"; render();
     } catch (e) { }
   },
@@ -1068,8 +1105,22 @@ const CHANGE_ACTIONS = {
     try {
       await apiCall(`/members/${el.dataset.id}/rank`, "PATCH", { rank: el.value });
       showToast("계급이 변경되었습니다");
+      await fetchFactionData(); // 등급 UI 재갱신을 위해 데이터 다시 가져오기
     } catch (e) { }
   },
+  "toggle-permission": async (el) => {
+    const id = el.dataset.id;
+    const perm = el.dataset.perm;
+    const isGranted = el.checked;
+    
+    try {
+      await apiCall(`/members/${id}/permissions`, "PATCH", { permission: perm, granted: isGranted });
+      showToast(`${isGranted ? '권한 부여됨' : '권한 해제됨'}`);
+      await fetchFactionData();
+    } catch (e) { 
+      el.checked = !isGranted; // 실패 시 원래 상태로 복구
+    }
+  }
 };
 
 const INPUT_ACTIONS = {
