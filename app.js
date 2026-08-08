@@ -637,9 +637,17 @@ function renderMemberRows(list) {
 
 /* ------------------------------ 근태 총시간 순위 계산 유틸 ------------------------------ */
 
-// "2026. 8. 8. 오후 3:45:00" 형식(toLocaleString('ko-KR'))의 문자열을 Date로 파싱
+// 시간 문자열을 Date로 파싱
+// 서버는 이제 ISO 8601(new Date().toISOString())로 저장하지만, 과거에 저장된
+// "2026. 8. 8. 오후 3:45:00" 형식(toLocaleString('ko-KR')) 레코드도 함께 지원한다.
 function parseKoreanDateTime(str) {
   if (!str) return null;
+
+  // 1) ISO 8601 등 표준 형식 우선 시도 (서버가 현재 저장하는 형식)
+  const iso = new Date(str);
+  if (!isNaN(iso.getTime())) return iso;
+
+  // 2) 과거 한국어 로케일 형식 fallback
   const m = String(str).match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(오전|오후)\s*(\d{1,2}):(\d{2}):(\d{2})/);
   if (!m) return null;
   const [, y, mo, d, ampm, hRaw, mi, s] = m;
@@ -647,6 +655,12 @@ function parseKoreanDateTime(str) {
   if (ampm === "오후" && h !== 12) h += 12;
   if (ampm === "오전" && h === 12) h = 0;
   return new Date(parseInt(y, 10), parseInt(mo, 10) - 1, parseInt(d, 10), h, parseInt(mi, 10), parseInt(s, 10));
+}
+
+// 화면에 사람이 읽기 좋은 한국어 형식으로 표시 (브라우저는 항상 풀 ICU를 갖고 있어 안전)
+function formatDisplayDateTime(str) {
+  const d = parseKoreanDateTime(str);
+  return d ? d.toLocaleString('ko-KR') : (str || "-");
 }
 
 function formatWorkMinutes(mins) {
@@ -725,8 +739,8 @@ function renderAttendance() {
         <span style="font-weight:600;">${log.name}</span>
         <span style="color:var(--gold); font-size:12.5px; font-weight:600;">${userRank}</span>
         <span class="mono" style="color:var(--gold); font-weight:600;">${formatBadge(log.badge)}</span>
-        <span class="mono" style="font-size:12.5px; color:var(--muted);">${log.clock_in_time}</span>
-        <span class="mono" style="font-size:12.5px; color:var(--muted);">${isWorking ? '-' : log.clock_out_time}</span>
+        <span class="mono" style="font-size:12.5px; color:var(--muted);">${formatDisplayDateTime(log.clock_in_time)}</span>
+        <span class="mono" style="font-size:12.5px; color:var(--muted);">${isWorking ? '-' : formatDisplayDateTime(log.clock_out_time)}</span>
         <span class="badge ${isWorking ? 'ok' : 'steel'}">${isWorking ? '근무 중' : '퇴근'}</span>
       </div>`;
     });
