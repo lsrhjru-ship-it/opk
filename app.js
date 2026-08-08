@@ -31,7 +31,7 @@ function hasPermission(permKey) {
   if (!SESSION) return false;
   // 팩션장(isOwner)이거나 위원장인 경우 모든 권한 허용
   if (SESSION.isOwner || SESSION.rank === "위원장") return true;
-  
+
   // 부여된 권한 목록 배열 확인
   const userPerms = SESSION.permissions || [];
   return userPerms.includes(permKey);
@@ -199,7 +199,7 @@ function render() {
     app.innerHTML = `<div style="min-height:100vh; display:flex; align-items:center; justify-content:center; color:var(--muted);">데이터를 불러오는 중입니다...</div>`;
     return;
   }
-  
+
   // 현재 탭이 권한 밖으로 밀려났다면 dash로 초기화
   const activeTabs = getAccessibleTabs();
   if (!activeTabs.find(t => t.key === TAB)) TAB = "dash";
@@ -585,10 +585,10 @@ function renderMembers() {
 }
 
 function renderMemberRows(list) {
-  const cols = "1.4fr 0.8fr 1fr 0.8fr 1fr 0.8fr";
+  const cols = "1.8fr 0.7fr 0.8fr 0.8fr 1fr 0.8fr";
   let html = `<div class="table-head" style="grid-template-columns:${cols};"><span>이름</span><span>고유번호</span><span>계급/분류</span><span>상태</span><span>가입일</span><span></span></div>`;
   if (list.length === 0) { html += `<div style="padding:28px; text-align:center; color:var(--muted); font-size:13.5px;">검색 결과가 없습니다.</div>`; return html; }
-  
+
   list.forEach(a => {
     // 계급에 따른 등급 분류 추출
     const category = getRankCategory(a.rank);
@@ -598,13 +598,15 @@ function renderMemberRows(list) {
     else if (category === "일반 간부직") catBadgeColor = "#3498db";
 
     html += `<div class="table-row row-hover" style="grid-template-columns:${cols}; align-items:center;" data-id="${a.id}">
-      <span style="font-weight:600;">${a.name}</span>
+      <span style="display:flex; align-items:center; gap:6px; font-weight:600;">
+        ${a.name}
+        <span style="font-size:10px; font-weight:700; color:${catBadgeColor}; border:1px solid ${catBadgeColor}; border-radius:4px; padding:1px 5px; line-height:1.5; white-space:nowrap;">${category}</span>
+      </span>
       <span class="mono" style="color:var(--gold); font-weight:600;">${formatBadge(a.badge)}</span>
       <div style="display:flex; flex-direction:column; gap:4px;">
         <select data-action="change-rank" data-id="${a.id}" style="padding:4px 6px; font-size:12px; width:100%;">
           ${RANKS.map(r => `<option value="${r}" ${r === a.rank ? "selected" : ""}>${r}</option>`).join("")}
         </select>
-        <span style="font-size:11px; color:${catBadgeColor}; font-weight:600;">[${category}]</span>
       </div>
       <span class="badge ${a.status === "재직" ? "ok" : "danger"}">${a.status}</span>
       <span class="mono" style="color:var(--muted); font-size:12px;">${a.join_date || a.joinDate || "-"}</span>
@@ -780,7 +782,7 @@ function renderWarn() {
 function renderAccounts() {
   const cols = "1fr 1fr 1.2fr 2fr 0.5fr";
   let rows = `<div class="table-head" style="grid-template-columns:${cols};"><span>이름</span><span>아이디</span><span>새 비밀번호</span><span>메뉴 권한 할당 (팩션장/임원 제외)</span><span></span></div>`;
-  
+
   const PERM_LABELS = { members: "팩션원", attendance: "근태", notices: "공지", apps: "가입", warn: "경고" };
 
   DATA.accounts.forEach(a => {
@@ -930,8 +932,8 @@ const CLICK_ACTIONS = {
     f.style.display = f.style.display === "none" ? "flex" : "none";
   },
   "export-members": () => {
-    const ws = XLSX.utils.json_to_sheet(DATA.accounts.map(a => ({ 
-      이름: a.name, 고유번호: formatBadge(a.badge), 계급: a.rank, 등급: getRankCategory(a.rank), 상태: a.status, 아이디: a.username, 가입일: a.join_date || a.joinDate 
+    const ws = XLSX.utils.json_to_sheet(DATA.accounts.map(a => ({
+      이름: a.name, 고유번호: formatBadge(a.badge), 계급: a.rank, 등급: getRankCategory(a.rank), 상태: a.status, 아이디: a.username, 가입일: a.join_date || a.joinDate
     })));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "팩션원명단");
@@ -953,10 +955,13 @@ const CLICK_ACTIONS = {
     } catch (e) { }
   },
   "toggle-status": async (el) => {
+    const id = el.dataset.id;
     try {
-      await apiCall(`/members/${el.dataset.id}/status`, "PATCH");
+      await apiCall(`/members/${id}/status`, "PATCH");
       showToast("상태가 변경되었습니다");
-      await fetchFactionData();
+      const acc = DATA.accounts.find(a => String(a.id) === String(id));
+      if (acc) acc.status = acc.status === "재직" ? "해임" : "재직";
+      refreshTab();
     } catch (e) { }
   },
   "decide-app": async (el) => {
@@ -1006,10 +1011,12 @@ const CLICK_ACTIONS = {
     } catch (e) { }
   },
   "remove-account": async (el) => {
+    const id = el.dataset.id;
     try {
-      await apiCall(`/members/${el.dataset.id}`, "DELETE");
+      await apiCall(`/members/${id}`, "DELETE");
       showToast("계정이 삭제되었습니다", "danger");
-      await fetchFactionData();
+      DATA.accounts = DATA.accounts.filter(a => String(a.id) !== String(id));
+      refreshTab();
     } catch (e) { }
   },
 
@@ -1102,22 +1109,38 @@ const SUBMIT_ACTIONS = {
 
 const CHANGE_ACTIONS = {
   "change-rank": async (el) => {
+    const id = el.dataset.id;
+    const newRank = el.value;
+    const prevRank = el.dataset.prevRank || (DATA.accounts.find(a => String(a.id) === String(id)) || {}).rank;
     try {
-      await apiCall(`/members/${el.dataset.id}/rank`, "PATCH", { rank: el.value });
+      await apiCall(`/members/${id}/rank`, "PATCH", { rank: newRank });
       showToast("계급이 변경되었습니다");
-      await fetchFactionData(); // 등급 UI 재갱신을 위해 데이터 다시 가져오기
-    } catch (e) { }
+      // 서버 재조회 없이 로컬 데이터만 갱신 (불필요한 네트워크 왕복 제거)
+      const acc = DATA.accounts.find(a => String(a.id) === String(id));
+      if (acc) acc.rank = newRank;
+      refreshTab();
+    } catch (e) {
+      if (prevRank) el.value = prevRank; // 실패 시 이전 값으로 복구
+    }
   },
   "toggle-permission": async (el) => {
     const id = el.dataset.id;
     const perm = el.dataset.perm;
     const isGranted = el.checked;
-    
+
     try {
       await apiCall(`/members/${id}/permissions`, "PATCH", { permission: perm, granted: isGranted });
       showToast(`${isGranted ? '권한 부여됨' : '권한 해제됨'}`);
-      await fetchFactionData();
-    } catch (e) { 
+      const acc = DATA.accounts.find(a => String(a.id) === String(id));
+      if (acc) {
+        acc.permissions = acc.permissions || [];
+        if (isGranted) {
+          if (!acc.permissions.includes(perm)) acc.permissions.push(perm);
+        } else {
+          acc.permissions = acc.permissions.filter(p => p !== perm);
+        }
+      }
+    } catch (e) {
       el.checked = !isGranted; // 실패 시 원래 상태로 복구
     }
   }
