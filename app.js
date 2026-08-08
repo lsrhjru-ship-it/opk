@@ -1,20 +1,73 @@
 /* ============================================================================
-   보안국 인트라넷 — 백엔드 API 연동 버전 (Express + SQLite)
+   보안국 인트라넷 — 백엔드 API 연동 + 법률 계산기 통합 버전
    ============================================================================ */
 
-const API_BASE = "https://lsrhjru.wisp.uno/api";
+const API_BASE = "http://localhost:3000/api";
 const RANKS = ["위원장", "부위원장", "본부장", "총감", "차관보", "사령관", "참모장", "감찰관", "작전관", "지휘관", "특별보안관", "감독관", "수사관", "보안관", "교육생"];
 
 let TOKEN = localStorage.getItem("bureau_token") || null;
 let SESSION = JSON.parse(localStorage.getItem("bureau_session") || "null");
-let DATA = null; // 백엔드 DB에서 조회해 온 현재 팩션 전체 데이터
+let DATA = null;
 let TAB = "dash";
 let VIEW = "gate";
 let LAST = {};
 
+/* ------------------------------ 법률 계산기 전용 데이터 및 상태 ------------------------------ */
+
+const LAW_DATA = [
+  { category: "건물 알피", name: "편의점", fine: "50,000,000원", detention: "10분", process: "공표 허가 -> 벨 울림 -> 사이드공지 2회 -> 무력진압 3회", etc: "경관 재량 무기 압수 / 금지자리 필수 확인" },
+  { category: "건물 알피", name: "ATM", fine: "50,000,000원", detention: "10분", process: "공표 허가 -> 벨 울림 -> 사이드공지 2회 -> 무력진압 3회", etc: "경관 재량 무기 압수 / 금지자리 필수 확인" },
+  { category: "건물 알피", name: "젤리가게", fine: "300,000,000원", detention: "15분", process: "공표 허가 -> 벨 울림 -> 사이드공지 2회 -> 무력진압 3회", etc: "금지자리 필수 확인" },
+  { category: "건물 알피", name: "빈집털이", fine: "40,000,000원", detention: "5분", process: "공표 허가 -> 벨 울림 -> 사이드공지 2회 -> 무력진압 3회", etc: "경관 재량 무기 압수" },
+  { category: "건물 알피", name: "북부은행", fine: "150,000,000원", detention: "25분", process: "공표 허가 -> 벨 울림 -> 사이드공지 2회 -> 무력진압 3회", etc: "" },
+  { category: "건물 알피", name: "닭공장 털이", fine: "200,000,000원", detention: "20분", process: "공표 허가 -> 벨 울림 -> 사이드공지 2회 -> 무력진압 3회", etc: "무기 압수 필수 / 구금 최소 10분 / 금지자리 필수 확인" },
+  { category: "건물 알피", name: "중부 보안국 털이", fine: "200,000,000원", detention: "40분", process: "공표 허가 -> 벨 울림 -> 사이드공지 2회 -> 무력진압 3회", etc: "인원 +2 / 구금 최소 10분" },
+  { category: "차량 알피", name: "도주", fine: "150,000,000원", detention: "10분", process: "PM 3회 -> 미 정차 -> 2분내로 도주자 등록 / 위치 추적 가능", etc: "무기 압수 필수 / 범위 이탈 도주자 사격 금지" },
+  { category: "차량 알피", name: "수배", fine: "300,000,000원", detention: "20분", process: "미 출석 -> 수배 시작 사이드 공지 / 위치 추적 가능", etc: "무기 압수 필수 / 수배 참여자 2억원 구금 15분 무기 압수" },
+  { category: "차량 알피", name: "긴급수배", fine: "300,000,000원", detention: "20분", process: "수배 시작 사이드 공지 / 위치 추적 가능", etc: "차량 탈취(운행), 공무원(살인, 폭행, 차량파손) 시 출석 없이 목격 5분 이내" },
+  { category: "차량 알피", name: "즉흥", fine: "200,000,000원", detention: "30분", process: "경범죄 3회 이상 + PM 3번 + 선발포 또는 대응사격 -> 즉흥", etc: "무기 압수 필수 / 10분 이내 지원" },
+  { category: "영장", name: "영장", fine: "400,000,000원", detention: "40분", process: "수배자가 사유지 진입 -> 영장 전환 사공 2회 -> 사유지 도착 후 공표 -> 5분 후 무력진압 3회", etc: "무기와 불법 물건 필수 압수" },
+  { category: "경범죄", name: "소음공해", fine: "4,000,000원", detention: "", process: "", etc: "" },
+  { category: "경범죄", name: "불법주정차", fine: "5,000,000원", detention: "", process: "", etc: "" },
+  { category: "경범죄", name: "속도위반 (일반도로)", fine: "5,000,000원", detention: "", process: "", etc: "일반도로 (150km 이상)" },
+  { category: "경범죄", name: "속도위반 (고속도로)", fine: "10,000,000원", detention: "", process: "", etc: "고속도로 (220km 이상)" },
+  { category: "경범죄", name: "신호위반", fine: "5,000,000원", detention: "", process: "", etc: "" },
+  { category: "경범죄", name: "진로방해", fine: "5,000,000원", detention: "", process: "", etc: "" },
+  { category: "경범죄", name: "불법유턴", fine: "5,000,000원", detention: "", process: "", etc: "" },
+  { category: "경범죄", name: "역주행", fine: "5,000,000원", detention: "", process: "", etc: "" },
+  { category: "경범죄", name: "차선위반", fine: "5,000,000원", detention: "", process: "", etc: "" },
+  { category: "경범죄", name: "인도주행", fine: "5,000,000원", detention: "", process: "", etc: "" },
+  { category: "경범죄", name: "공공기물 파손", fine: "5,000,000원", detention: "", process: "", etc: "" },
+  { category: "경범죄", name: "스턴트", fine: "10,000,000원", detention: "", process: "", etc: "" },
+  { category: "경범죄", name: "차량파손", fine: "10,000,000원", detention: "", process: "", etc: "" },
+  { category: "경범죄", name: "뺑소니", fine: "20,000,000원", detention: "", process: "", etc: "합의 시 처벌 불가" },
+  { category: "경범죄", name: "난폭운전", fine: "25,000,000원", detention: "20분", process: "", etc: "도로교통법 등 3건 이상 위반" },
+  { category: "경범죄", name: "폭주", fine: "30,000,000원", detention: "20분", process: "", etc: "400km 이상 주행 시" },
+  { category: "경범죄", name: "보복운전", fine: "50,000,000원", detention: "20분", process: "", etc: "" },
+  { category: "경범죄", name: "무허가 항공기 운행", fine: "300,000,000원", detention: "60분", process: "", etc: "" },
+  { category: "중범죄", name: "방조/공범죄", fine: "범죄자와 동일", detention: "", process: "", etc: "구금 시 해당 불법 물건/무기 개별 처벌" },
+  { category: "중범죄", name: "명예훼손", fine: "10,000,000원", detention: "10분", process: "", etc: "" },
+  { category: "중범죄", name: "폭행", fine: "50,000,000원", detention: "20분", process: "", etc: "" },
+  { category: "중범죄", name: "불법 물건 소지", fine: "60,000,000원", detention: "20분", process: "", etc: "" },
+  { category: "중범죄", name: "불법 총기 소지", fine: "80,000,000원", detention: "30분", process: "", etc: "" },
+  { category: "중범죄", name: "불법무기/물건언급", fine: "40,000,000원", detention: "20분", process: "", etc: "채팅포함, 은어를 사용하지 않을 시" },
+  { category: "중범죄", name: "증거 인멸", fine: "100,000,000원", detention: "20분", process: "", etc: "" },
+  { category: "중범죄", name: "차량 절도", fine: "30,000,000원", detention: "30분", process: "", etc: "" },
+  { category: "중범죄", name: "시민 살인", fine: "200,000,000원", detention: "30분", process: "", etc: "" },
+  { category: "중범죄", name: "납치/유괴", fine: "200,000,000원", detention: "30분", process: "", etc: "" },
+  { category: "중범죄", name: "사기", fine: "30,000,000원", detention: "20분", process: "", etc: "" },
+  { category: "중범죄", name: "업무/영업 방해", fine: "30,000,000원", detention: "10분", process: "", etc: "" },
+  { category: "중범죄", name: "공갈 협박", fine: "50,000,000원", detention: "20분", process: "", etc: "" },
+  { category: "중범죄", name: "특수 폭행", fine: "50,000,000원", detention: "20분", process: "", etc: "" }
+];
+
+let LAW_SELECTED = new Set();
+let LAW_CAT = "전체";
+let LAW_SEARCH = "";
+let LAW_LAST_CLICKED = null;
+
 /* ------------------------------ API 연동 유틸 ------------------------------ */
 
-// 백엔드 REST API 통신 공통 함수
 async function apiCall(endpoint, method = "GET", body = null) {
   const headers = { "Content-Type": "application/json" };
   if (TOKEN) headers["Authorization"] = `Bearer ${TOKEN}`;
@@ -33,7 +86,6 @@ async function apiCall(endpoint, method = "GET", body = null) {
   }
 }
 
-// 백엔드에서 최신 팩션 데이터 불러오기
 async function fetchFactionData() {
   if (!TOKEN) return;
   try {
@@ -75,6 +127,7 @@ function logout() {
 
 const TABS = [
   { key: "dash", label: "대시보드" },
+  { key: "lawcalc", label: "⚖️ 법률 계산기" },
   { key: "members", label: "팩션원 관리" },
   { key: "attendance", label: "근태 관리" },
   { key: "notices", label: "사이드 공지" },
@@ -234,6 +287,7 @@ function renderShell() {
 
 function renderTab() {
   if (TAB === "dash") return renderDash();
+  if (TAB === "lawcalc") return renderLawCalc();
   if (TAB === "members") return renderMembers();
   if (TAB === "attendance") return renderAttendance();
   if (TAB === "notices") return renderNotices();
@@ -264,6 +318,8 @@ function statCard(label, value, color) {
   </div>`;
 }
 
+/* ------------------------------ 대시보드 ------------------------------ */
+
 function renderDash() {
   const activeCount = DATA.accounts.filter(a => a.status === "재직").length;
   const pendingApps = DATA.applications.filter(a => a.status === "요청됨").length;
@@ -290,6 +346,141 @@ function renderDash() {
         </div>`).join("")}
     </div>`;
 }
+
+/* ------------------------------ 법률 계산기 탭 ------------------------------ */
+
+function getLawKey(item) {
+  return `${item.category}||${item.name}`;
+}
+
+function parseFine(text) {
+  if (!text || text.includes('/')) return null;
+  const match = text.match(/[\d,]+(?=\s*원)/);
+  return match ? parseInt(match[0].replace(/,/g, ''), 10) : null;
+}
+
+function parseDetention(text) {
+  if (!text) return 0;
+  const match = text.match(/(\d+)\s*분/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+function formatWon(n) { return n.toLocaleString() + " 원"; }
+function formatMinutes(n) {
+  if (n <= 0) return "0분";
+  const h = Math.floor(n / 60), m = n % 60;
+  return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
+}
+
+function renderLawCalc() {
+  const categories = ["전체", "건물 알피", "차량 알피", "영장", "경범죄", "중범죄"];
+
+  // 데이터 필터링
+  const query = LAW_SEARCH.trim().toLowerCase();
+  const filtered = LAW_DATA.filter(item => {
+    const matchCat = LAW_CAT === "전체" || item.category === LAW_CAT;
+    const matchQuery = !query ||
+      item.name.toLowerCase().includes(query) ||
+      item.category.toLowerCase().includes(query) ||
+      (item.etc && item.etc.toLowerCase().includes(query));
+    return matchCat && matchQuery;
+  });
+
+  // 합계 계산
+  let totalFine = 0, totalDetention = 0, count = 0, excluded = [];
+  LAW_DATA.forEach(item => {
+    const key = getLawKey(item);
+    if (LAW_SELECTED.has(key)) {
+      count++;
+      const fVal = parseFine(item.fine);
+      if (fVal === null) excluded.push(item.name);
+      else totalFine += fVal;
+      totalDetention += parseDetention(item.detention);
+    }
+  });
+
+  const lastItem = LAW_LAST_CLICKED || (filtered.length > 0 ? filtered[0] : null);
+
+  return `
+    ${header("법률 검색 및 계산기", "죄목을 선택하면 벌금과 구금시간이 자동으로 합산됩니다.")}
+    
+    <!-- 카테고리 탭 필터 -->
+    <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
+      ${categories.map(c => `
+        <button class="btn-ghost ${LAW_CAT === c ? 'active' : ''}" 
+                data-action="law-cat" data-cat="${c}" 
+                style="padding:8px 16px; font-size:13px; font-weight:600; ${LAW_CAT === c ? 'background:var(--gold); color:#000;' : ''}">
+          ${c}
+        </button>
+      `).join("")}
+    </div>
+
+    <!-- 검색 및 조작 버튼 -->
+    <div class="panel" style="display:flex; align-items:center; gap:12px; padding:10px 16px; margin-bottom:16px;">
+      <span style="color:var(--muted); font-size:15px;">🔍</span>
+      <input id="lawSearchInput" data-action="law-search" value="${LAW_SEARCH}" placeholder="검색어 입력 (죄목, 키워드, 위치)" style="background:transparent; border:none; color:var(--text); width:100%; font-size:14px; outline:none;" />
+      <button data-action="law-select-all" class="btn-gold" style="padding:6px 12px; font-size:12px; white-space:nowrap;">전체 선택</button>
+      <button data-action="law-clear-all" class="btn-ghost" style="padding:6px 12px; font-size:12px; white-space:nowrap;">선택 해제</button>
+    </div>
+
+    <!-- 법률 데이터 목록 테이블 -->
+    <div class="panel" style="margin-bottom:16px; max-height:420px; overflow-y:auto;">
+      <div class="table-head" style="grid-template-columns: 50px 100px 1.5fr 1fr 1fr 2fr; sticky; top:0; background:var(--panel); z-index:2;">
+        <span style="text-align:center;">선택</span>
+        <span style="text-align:center;">구분</span>
+        <span>죄목 / 위치</span>
+        <span style="text-align:center;">벌금</span>
+        <span style="text-align:center;">구금시간</span>
+        <span>기타 사항</span>
+      </div>
+      ${filtered.length === 0 ? `<div style="padding:30px; text-align:center; color:var(--muted); font-size:13.5px;">검색 결과가 없습니다.</div>` :
+      filtered.map(item => {
+        const key = getLawKey(item);
+        const checked = LAW_SELECTED.has(key);
+        return `
+        <div class="table-row row-hover ${checked ? 'selected' : ''}" 
+             data-action="law-toggle" data-key="${key}"
+             style="grid-template-columns: 50px 100px 1.5fr 1fr 1fr 2fr; cursor:pointer; ${checked ? 'background:rgba(168,112,48,0.18);' : ''}">
+          <span style="text-align:center; font-weight:bold; color:${checked ? 'var(--gold)' : 'var(--muted)'};">${checked ? '✓' : '☐'}</span>
+          <span style="text-align:center; font-size:12px; color:var(--muted);">${item.category}</span>
+          <span style="font-weight:600;">${item.name}</span>
+          <span class="mono" style="text-align:center; color:var(--gold);">${item.fine || '-'}</span>
+          <span class="mono" style="text-align:center; color:var(--steel);">${item.detention || '-'}</span>
+          <span style="font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${item.etc || '-'}</span>
+        </div>`;
+      }).join("")}
+    </div>
+
+    <!-- 합계 계산기 결과 박스 -->
+    <div style="display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
+      <div class="panel" style="flex:1; min-width:200px; padding:16px 20px;">
+        <div style="font-size:12px; color:var(--muted); font-weight:600;">선택된 항목</div>
+        <div class="disp" style="font-size:24px; font-weight:700; color:var(--text); margin-top:4px;">${count} 건</div>
+      </div>
+      <div class="panel" style="flex:1.5; min-width:220px; padding:16px 20px;">
+        <div style="font-size:12px; color:var(--muted); font-weight:600;">총 벌금</div>
+        <div class="disp mono" style="font-size:24px; font-weight:700; color:var(--gold); margin-top:4px;">${count === 0 ? '-' : formatWon(totalFine)}</div>
+      </div>
+      <div class="panel" style="flex:1.5; min-width:220px; padding:16px 20px;">
+        <div style="font-size:12px; color:var(--muted); font-weight:600;">총 구금시간</div>
+        <div class="disp mono" style="font-size:24px; font-weight:700; color:var(--steel); margin-top:4px;">${count === 0 ? '-' : formatMinutes(totalDetention)}</div>
+      </div>
+    </div>
+
+    ${excluded.length > 0 ? `<div style="font-size:12px; color:var(--danger); margin-bottom:16px; font-weight:600;">⚠ 수동 계산 필요 항목 포함: ${excluded.join(", ")}</div>` : ''}
+
+    <!-- 클릭 항목 상세 정보 -->
+    ${lastItem ? `
+    <div class="panel" style="padding:18px 20px; line-height:1.6; font-size:13.5px;">
+      <div style="font-weight:700; color:var(--gold); margin-bottom:6px;">📌 ${lastItem.name} (${lastItem.category}) 진행 절차</div>
+      <div style="color:var(--text); margin-bottom:10px;">${lastItem.process || "별도 진행 절차 없음"}</div>
+      <div style="font-weight:700; color:var(--danger); margin-bottom:4px;">⚠️ 기타 주의사항</div>
+      <div style="color:var(--muted);">${lastItem.etc || "없음"}</div>
+    </div>` : ''}
+  `;
+}
+
+/* ------------------------------ 기타 화면들 ------------------------------ */
 
 function renderMembers() {
   return `
@@ -493,7 +684,7 @@ function renderSettings() {
 }
 
 /* ============================================================================
-   이벤트 위임 (백엔드 REST API 연결)
+   이벤트 위임
    ============================================================================ */
 
 const CLICK_ACTIONS = {
@@ -503,6 +694,24 @@ const CLICK_ACTIONS = {
   "goto-gate": () => { VIEW = "gate"; render(); },
   "switch-tab": (el) => { TAB = el.dataset.tab; refreshTab(); },
   "logout": () => logout(),
+
+  // 법률 계산기 액션
+  "law-cat": (el) => { LAW_CAT = el.dataset.cat; refreshTab(); },
+  "law-toggle": (el) => {
+    const key = el.dataset.key;
+    if (LAW_SELECTED.has(key)) LAW_SELECTED.delete(key);
+    else LAW_SELECTED.add(key);
+    LAW_LAST_CLICKED = LAW_DATA.find(i => getLawKey(i) === key);
+    refreshTab();
+  },
+  "law-select-all": () => {
+    LAW_DATA.forEach(i => LAW_SELECTED.add(getLawKey(i)));
+    refreshTab();
+  },
+  "law-clear-all": () => {
+    LAW_SELECTED.clear();
+    refreshTab();
+  },
 
   "toggle-work": async () => {
     try {
@@ -713,6 +922,10 @@ const INPUT_ACTIONS = {
     const list = DATA.accounts.filter(a => a.name.includes(q) || a.badge.includes(q));
     document.getElementById("memberList").innerHTML = renderMemberRows(list);
   },
+  "law-search": (el) => {
+    LAW_SEARCH = el.value;
+    refreshTab();
+  }
 };
 
 function initEventDelegation() {
