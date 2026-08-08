@@ -12,6 +12,14 @@ let TAB = "dash";
 let VIEW = "gate";
 let LAST = {};
 
+/* ------------------------------ 고유번호 앞 00 제거 헬퍼 ------------------------------ */
+
+function formatBadge(badge) {
+  if (!badge) return "-";
+  const cleaned = String(badge).replace(/^0+/, '');
+  return cleaned === "" ? "0" : cleaned;
+}
+
 /* ------------------------------ 법률 계산기 전용 데이터 및 상태 ------------------------------ */
 
 const LAW_DATA = [
@@ -99,6 +107,7 @@ async function fetchFactionData() {
 
 function showToast(msg, kind) {
   const el = document.getElementById("toast");
+  if (!el) return;
   el.textContent = (kind === "danger" ? "⚠ " : "✓ ") + msg;
   el.className = kind === "danger" ? "danger" : "";
   el.style.display = "flex";
@@ -221,7 +230,7 @@ function renderJoin() {
       <div class="mono" style="font-size:11.5px; font-weight:600; color:var(--muted); margin-bottom:16px;">팩션 코드로 가입 신청</div>
       <div class="field"><label>팩션 코드</label><input id="jfCode" class="mono" style="width:100%; letter-spacing:2px;" placeholder="예) A3F9K2" /></div>
       <div class="field" style="margin-top:14px;"><label>이름</label><input id="jfName" style="width:100%;" /></div>
-      <div class="field" style="margin-top:14px;"><label>고유번호</label><input id="jfUid" class="mono" style="width:100%;" placeholder="예) 991234" /></div>
+      <div class="field" style="margin-top:14px;"><label>고유번호</label><input id="jfUid" class="mono" style="width:100%;" placeholder="예) 14" /></div>
       <div id="joinErr" style="font-size:12.5px; color:var(--danger); margin-top:10px; display:none;"></div>
       <button type="submit" class="btn-gold disp" style="width:100%; padding:12px 0; font-size:15px; margin-top:20px;">가입하기</button>
       <button type="button" data-action="goto-gate" class="link-btn" style="display:block; margin:16px auto 0;">← 뒤로</button>
@@ -274,7 +283,7 @@ function renderShell() {
       </nav>
       <div style="padding:16px; border-top:1px solid var(--line); background:var(--panel2); border-radius:0 0 var(--radius-lg) var(--radius-lg);">
         <div style="font-size:13.5px; font-weight:700;">${SESSION.name}</div>
-        <div class="mono" style="font-size:11px; color:var(--gold); font-weight:600; margin-top:2px;">${SESSION.rank} · No.${SESSION.badge}</div>
+        <div class="mono" style="font-size:11px; color:var(--gold); font-weight:600; margin-top:2px;">${SESSION.rank} · No.${formatBadge(SESSION.badge)}</div>
         ${workBtnHtml}
         <button data-action="logout" class="btn-ghost" style="margin-top:8px; width:100%; padding:8px 0; font-size:12px; border-color:var(--line); color:var(--muted);">로그아웃</button>
       </div>
@@ -326,7 +335,7 @@ function renderDash() {
   const warnCount = DATA.warnings.length;
   const recent = [...DATA.warnings].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
   return `
-    ${header("대시보드", `${SESSION.name} 님, 오늘도 수고 많으십니다.`)}
+    ${header("대시보드", `${SESSION.rank} ${SESSION.name} 님, 오늘도 수고 많으십니다.`)}
     <div class="panel" style="display:flex; align-items:center; justify-content:space-between; padding:14px 20px; margin-bottom:18px;">
       <span style="font-size:13px; color:var(--muted); font-weight:500;">팩션 코드 (신규 가입 시 공유)</span>
       <span class="mono" style="font-size:15px; font-weight:700; color:var(--gold); letter-spacing:2px;">${DATA.code}</span>
@@ -375,7 +384,6 @@ function formatMinutes(n) {
 function renderLawCalc() {
   const categories = ["전체", "건물 알피", "차량 알피", "영장", "경범죄", "중범죄"];
 
-  // 데이터 필터링
   const query = LAW_SEARCH.trim().toLowerCase();
   const filtered = LAW_DATA.filter(item => {
     const matchCat = LAW_CAT === "전체" || item.category === LAW_CAT;
@@ -386,7 +394,6 @@ function renderLawCalc() {
     return matchCat && matchQuery;
   });
 
-  // 합계 계산
   let totalFine = 0, totalDetention = 0, count = 0, excluded = [];
   LAW_DATA.forEach(item => {
     const key = getLawKey(item);
@@ -404,7 +411,6 @@ function renderLawCalc() {
   return `
     ${header("법률 검색 및 계산기", "죄목을 선택하면 벌금과 구금시간이 자동으로 합산됩니다.")}
     
-    <!-- 카테고리 탭 필터 -->
     <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
       ${categories.map(c => `
         <button class="btn-ghost ${LAW_CAT === c ? 'active' : ''}" 
@@ -415,7 +421,6 @@ function renderLawCalc() {
       `).join("")}
     </div>
 
-    <!-- 검색 및 조작 버튼 -->
     <div class="panel" style="display:flex; align-items:center; gap:12px; padding:10px 16px; margin-bottom:16px;">
       <span style="color:var(--muted); font-size:15px;">🔍</span>
       <input id="lawSearchInput" data-action="law-search" value="${LAW_SEARCH}" placeholder="검색어 입력 (죄목, 키워드, 위치)" style="background:transparent; border:none; color:var(--text); width:100%; font-size:14px; outline:none;" />
@@ -423,7 +428,6 @@ function renderLawCalc() {
       <button data-action="law-clear-all" class="btn-ghost" style="padding:6px 12px; font-size:12px; white-space:nowrap;">선택 해제</button>
     </div>
 
-    <!-- 법률 데이터 목록 테이블 -->
     <div class="panel" style="margin-bottom:16px; max-height:420px; overflow-y:auto;">
       <div class="table-head" style="grid-template-columns: 50px 100px 1.5fr 1fr 1fr 2fr; sticky; top:0; background:var(--panel); z-index:2;">
         <span style="text-align:center;">선택</span>
@@ -451,7 +455,6 @@ function renderLawCalc() {
       }).join("")}
     </div>
 
-    <!-- 합계 계산기 결과 박스 -->
     <div style="display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
       <div class="panel" style="flex:1; min-width:200px; padding:16px 20px;">
         <div style="font-size:12px; color:var(--muted); font-weight:600;">선택된 항목</div>
@@ -469,7 +472,6 @@ function renderLawCalc() {
 
     ${excluded.length > 0 ? `<div style="font-size:12px; color:var(--danger); margin-bottom:16px; font-weight:600;">⚠ 수동 계산 필요 항목 포함: ${excluded.join(", ")}</div>` : ''}
 
-    <!-- 클릭 항목 상세 정보 -->
     ${lastItem ? `
     <div class="panel" style="padding:18px 20px; line-height:1.6; font-size:13.5px;">
       <div style="font-weight:700; color:var(--gold); margin-bottom:6px;">📌 ${lastItem.name} (${lastItem.category}) 진행 절차</div>
@@ -480,7 +482,7 @@ function renderLawCalc() {
   `;
 }
 
-/* ------------------------------ 기타 화면들 ------------------------------ */
+/* ------------------------------ 팩션원 및 근태 관리 ------------------------------ */
 
 function renderMembers() {
   return `
@@ -489,25 +491,25 @@ function renderMembers() {
        <button data-action="toggle-add-member" class="btn-gold">+ 팩션원 등록</button>`)}
     <div id="addMemberForm" class="panel" style="display:none; padding:18px; margin-bottom:18px; gap:12px; align-items:flex-end; flex-wrap:wrap; flex-direction:row;">
       <div class="field"><label>이름</label><input id="mName" /></div>
-      <div class="field"><label>배지번호</label><input id="mBadge" class="mono" style="width:110px;" /></div>
+      <div class="field"><label>고유번호</label><input id="mBadge" class="mono" style="width:110px;" placeholder="14" /></div>
       <div class="field"><label>계급</label><select id="mRank">${RANKS.map(r => `<option value="${r}">${r}</option>`).join("")}</select></div>
       <button data-action="submit-member" class="btn-gold">등록</button>
     </div>
     <div class="panel" style="display:flex; align-items:center; gap:8px; margin-bottom:14px; padding:6px 14px; max-width:280px;">
       <span style="color:var(--muted);">⌕</span>
-      <input id="memberSearch" data-action="search-members" placeholder="이름 또는 배지번호 검색" style="background:transparent; border:none; padding:6px 0; width:100%; box-shadow:none;" />
+      <input id="memberSearch" data-action="search-members" placeholder="이름 또는 고유번호 검색" style="background:transparent; border:none; padding:6px 0; width:100%; box-shadow:none;" />
     </div>
     <div class="panel" id="memberList">${renderMemberRows(DATA.accounts)}</div>`;
 }
 
 function renderMemberRows(list) {
   const cols = "1.4fr 0.8fr 1fr 0.8fr 1fr 0.8fr";
-  let html = `<div class="table-head" style="grid-template-columns:${cols};"><span>이름</span><span>배지</span><span>계급</span><span>상태</span><span>가입일</span><span></span></div>`;
+  let html = `<div class="table-head" style="grid-template-columns:${cols};"><span>이름</span><span>고유번호</span><span>계급</span><span>상태</span><span>가입일</span><span></span></div>`;
   if (list.length === 0) { html += `<div style="padding:28px; text-align:center; color:var(--muted); font-size:13.5px;">검색 결과가 없습니다.</div>`; return html; }
   list.forEach(a => {
     html += `<div class="table-row row-hover" style="grid-template-columns:${cols};" data-id="${a.id}">
       <span style="font-weight:600;">${a.name}</span>
-      <span class="mono" style="color:var(--gold); font-weight:600;">${a.badge}</span>
+      <span class="mono" style="color:var(--gold); font-weight:600;">${formatBadge(a.badge)}</span>
       <select data-action="change-rank" data-id="${a.id}" style="padding:5px 8px; font-size:12.5px;">${RANKS.map(r => `<option value="${r}" ${r === a.rank ? "selected" : ""}>${r}</option>`).join("")}</select>
       <span class="badge ${a.status === "재직" ? "ok" : "danger"}">${a.status}</span>
       <span class="mono" style="color:var(--muted); font-size:12px;">${a.join_date || a.joinDate || "-"}</span>
@@ -519,23 +521,27 @@ function renderMemberRows(list) {
 
 function renderAttendance() {
   const logs = [...DATA.attendance].reverse();
-  const cols = "1.2fr 0.8fr 1.5fr 1.5fr 1fr";
+  const cols = "1.2fr 1fr 0.8fr 1.5fr 1.5fr 0.8fr";
 
   let html = `
-    ${header("근태 관리", "인원들의 출퇴근 기록을 확인합니다.")}
+    ${header("근태 관리", "인원들의 출퇴근 기록 및 계급을 확인합니다.")}
     <div class="panel">
       <div class="table-head" style="grid-template-columns:${cols};">
-        <span>이름</span><span>배지</span><span>출근 시간</span><span>퇴근 시간</span><span>상태</span>
+        <span>이름</span><span>계급</span><span>고유번호</span><span>출근 시간</span><span>퇴근 시간</span><span>상태</span>
       </div>`;
 
   if (logs.length === 0) {
     html += `<div style="padding:28px; text-align:center; color:var(--muted); font-size:13.5px;">출퇴근 기록이 없습니다.</div>`;
   } else {
     logs.forEach(log => {
+      const userAcc = DATA.accounts.find(u => u.id === log.user_id);
+      const userRank = userAcc ? userAcc.rank : (log.user_id === SESSION.id ? SESSION.rank : "요원");
       const isWorking = !log.clock_out_time;
+
       html += `<div class="table-row row-hover" style="grid-template-columns:${cols};">
         <span style="font-weight:600;">${log.name}</span>
-        <span class="mono" style="color:var(--gold); font-weight:600;">${log.badge}</span>
+        <span style="color:var(--gold); font-size:12.5px; font-weight:600;">${userRank}</span>
+        <span class="mono" style="color:var(--gold); font-weight:600;">${formatBadge(log.badge)}</span>
         <span class="mono" style="font-size:12.5px; color:var(--muted);">${log.clock_in_time}</span>
         <span class="mono" style="font-size:12.5px; color:var(--muted);">${isWorking ? '-' : log.clock_out_time}</span>
         <span class="badge ${isWorking ? 'ok' : 'steel'}">${isWorking ? '근무 중' : '퇴근'}</span>
@@ -600,7 +606,7 @@ function renderApps() {
     <div class="panel" style="margin-bottom:24px;">
       ${pending.length === 0 ? `<div style="padding:24px; text-align:center; color:var(--muted); font-size:13.5px;">대기 중인 신청이 없습니다.</div>` :
       pending.map(a => `<div class="row-hover" style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-top:1px solid var(--line);">
-          <div><div style="font-size:14px; font-weight:600;">${a.name} <span class="mono" style="color:var(--muted); font-size:12px; font-weight:400;">· 고유번호 ${a.uid || "-"}</span></div></div>
+          <div><div style="font-size:14px; font-weight:600;">${a.name} <span class="mono" style="color:var(--muted); font-size:12px; font-weight:400;">· 고유번호 ${formatBadge(a.uid)}</span></div></div>
           <div style="display:flex; gap:8px; align-items:center;">
             <span class="badge ok">요청됨</span>
             <button class="icon-btn" data-action="decide-app" data-id="${a.id}" data-status="승인" style="border-color:var(--ok); color:var(--ok);">✓</button>
@@ -695,7 +701,6 @@ const CLICK_ACTIONS = {
   "switch-tab": (el) => { TAB = el.dataset.tab; refreshTab(); },
   "logout": () => logout(),
 
-  // 법률 계산기 액션
   "law-cat": (el) => { LAW_CAT = el.dataset.cat; refreshTab(); },
   "law-toggle": (el) => {
     const key = el.dataset.key;
@@ -716,7 +721,8 @@ const CLICK_ACTIONS = {
   "toggle-work": async () => {
     try {
       const res = await apiCall("/attendance/toggle", "POST");
-      showToast(res.isClockIn ? "출근 처리되었습니다" : "퇴근 처리되었습니다", res.isClockIn ? "ok" : "danger");
+      const statusText = res.isClockIn ? "출근" : "퇴근";
+      showToast(`[${SESSION.rank}] ${SESSION.name} 요원, ${statusText} 처리되었습니다.`, res.isClockIn ? "ok" : "danger");
       await fetchFactionData();
     } catch (e) { }
   },
@@ -758,7 +764,7 @@ const CLICK_ACTIONS = {
     f.style.display = f.style.display === "none" ? "flex" : "none";
   },
   "export-members": () => {
-    const ws = XLSX.utils.json_to_sheet(DATA.accounts.map(a => ({ 이름: a.name, 배지번호: a.badge, 계급: a.rank, 상태: a.status, 아이디: a.username, 가입일: a.join_date || a.joinDate })));
+    const ws = XLSX.utils.json_to_sheet(DATA.accounts.map(a => ({ 이름: a.name, 고유번호: formatBadge(a.badge), 계급: a.rank, 상태: a.status, 아이디: a.username, 가입일: a.join_date || a.joinDate })));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "팩션원명단");
     XLSX.writeFile(wb, `${DATA.name}_팩션원명단.xlsx`);
@@ -766,9 +772,10 @@ const CLICK_ACTIONS = {
   },
   "submit-member": async () => {
     const name = document.getElementById("mName").value.trim();
-    const badge = document.getElementById("mBadge").value.trim();
+    const badgeRaw = document.getElementById("mBadge").value.trim();
+    const badge = formatBadge(badgeRaw);
     const rank = document.getElementById("mRank").value;
-    if (!name || !badge) { showToast("이름과 배지번호를 입력하세요", "danger"); return; }
+    if (!name || !badge) { showToast("이름과 고유번호를 입력하세요", "danger"); return; }
 
     try {
       const res = await apiCall("/members", "POST", { name, badge, rank });
@@ -877,7 +884,7 @@ const SUBMIT_ACTIONS = {
   "submit-join": async () => {
     const code = document.getElementById("jfCode").value.trim().toUpperCase();
     const name = document.getElementById("jfName").value.trim();
-    const uid = document.getElementById("jfUid").value.trim();
+    const uid = formatBadge(document.getElementById("jfUid").value.trim());
     const err = document.getElementById("joinErr");
 
     if (!code || !name || !uid) { err.textContent = "모든 항목을 입력하세요"; err.style.display = "block"; return; }
