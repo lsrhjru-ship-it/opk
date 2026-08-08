@@ -204,6 +204,7 @@ function renderCreate() {
       <div class="mono" style="font-size:11.5px; font-weight:600; color:var(--muted); margin-bottom:16px;">새 팩션 만들기</div>
       <div class="field"><label>팩션 이름</label><input id="cfName" style="width:100%;" placeholder="예) 보안국" /></div>
       <div class="field" style="margin-top:14px;"><label>설립자 이름</label><input id="cfFounderName" style="width:100%;" /></div>
+      <div class="field" style="margin-top:14px;"><label>설립자 고유번호</label><input id="cfBadge" class="mono" style="width:100%;" placeholder="예) 0001" /></div>
       <div class="field" style="margin-top:14px;"><label>로그인 아이디</label><input id="cfUser" style="width:100%;" autocomplete="username" /></div>
       <div class="field" style="margin-top:14px;"><label>로그인 비밀번호 (6자 이상)</label><input id="cfPass" type="password" style="width:100%;" autocomplete="new-password" /></div>
       <div id="createErr" style="font-size:12.5px; color:var(--danger); margin-top:10px; display:none;"></div>
@@ -576,7 +577,7 @@ function renderAttendance() {
   } else {
     logs.forEach(log => {
       const userAcc = DATA.accounts.find(u => u.id === log.user_id);
-      const userRank = userAcc ? userAcc.rank : (log.user_id === SESSION.id ? SESSION.rank : "요원");
+      const userRank = userAcc ? userAcc.rank : (log.user_id === SESSION.id ? SESSION.rank : "님");
       const isWorking = !log.clock_out_time;
 
       html += `<div class="table-row row-hover" style="grid-template-columns:${cols};">
@@ -768,7 +769,7 @@ const CLICK_ACTIONS = {
     try {
       const res = await apiCall("/attendance/toggle", "POST");
       const statusText = res.isClockIn ? "출근" : "퇴근";
-      showToast(`[${SESSION.rank}] ${SESSION.name} 요원, ${statusText} 처리되었습니다.`, res.isClockIn ? "ok" : "danger");
+      showToast(`[${SESSION.rank}] ${SESSION.name} 님, ${statusText} 처리되었습니다.`, res.isClockIn ? "ok" : "danger");
       await fetchFactionData();
     } catch (e) { }
   },
@@ -913,17 +914,18 @@ const SUBMIT_ACTIONS = {
   "submit-create": async () => {
     const name = document.getElementById("cfName").value.trim();
     const founderName = document.getElementById("cfFounderName").value.trim();
+    const badge = document.getElementById("cfBadge").value.trim();
     const username = document.getElementById("cfUser").value.trim();
     const password = document.getElementById("cfPass").value;
     const err = document.getElementById("createErr");
 
-    if (!name || !founderName || !username || password.length < 6) {
+    if (!name || !founderName || !badge || !username || password.length < 6) {
       err.textContent = "모든 항목을 입력하세요 (비밀번호 6자 이상)"; err.style.display = "block"; return;
     }
 
     const code = genFactionCode();
     try {
-      await apiCall("/factions/create", "POST", { code, name, founderName, username, password });
+      await apiCall("/factions/create", "POST", { code, name, founderName, username, password, badge });
       LAST = { code, factionName: name };
       VIEW = "createDone"; render();
     } catch (e) { }
