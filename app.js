@@ -1,5 +1,5 @@
 /* ============================================================================
-   보안국 인트라넷 — 백엔드 API 연동 + 법률 계산기 통합 버전
+   보안국 인트라넷 — 백엔드 API 연동 + 법률 계산기 + RP 보고서 통합 버전
    ============================================================================ */
 
 const API_BASE = "https://lsrhjru.wisp.uno/api";
@@ -20,7 +20,7 @@ function formatBadge(badge) {
   return cleaned === "" ? "0" : cleaned;
 }
 
-/* ------------------------------ 법률 계산기 전용 데이터 및 상태 ------------------------------ */
+/* ------------------------------ 법률 계산기 전용 데이터 ------------------------------ */
 
 const LAW_DATA = [
   { category: "건물 알피", name: "편의점", fine: "50,000,000원", detention: "10분", process: "공표 허가 -> 벨 울림 -> 사이드공지 2회 -> 무력진압 3회", etc: "경관 재량 무기 압수 / 금지자리 필수 확인" },
@@ -136,6 +136,7 @@ function logout() {
 
 const TABS = [
   { key: "dash", label: "대시보드" },
+  { key: "rpreport", label: "📜 RP 보고서" },
   { key: "lawcalc", label: "⚖️ 법률 계산기" },
   { key: "members", label: "팩션원 관리" },
   { key: "attendance", label: "근태 관리" },
@@ -296,6 +297,7 @@ function renderShell() {
 
 function renderTab() {
   if (TAB === "dash") return renderDash();
+  if (TAB === "rpreport") return renderRpReport();
   if (TAB === "lawcalc") return renderLawCalc();
   if (TAB === "members") return renderMembers();
   if (TAB === "attendance") return renderAttendance();
@@ -353,6 +355,45 @@ function renderDash() {
           <span><strong style="color:var(--text);">${w.target_name}</strong> <span style="color:var(--muted);">· ${w.reason}</span></span>
           <span class="mono" style="color:var(--muted); font-size:12px;">${w.date}</span>
         </div>`).join("")}
+    </div>`;
+}
+
+/* ------------------------------ RP 보고서 탭 ------------------------------ */
+
+function renderRpReport() {
+  return `
+    ${header("RP 보고서 작성", "작성된 보고서는 연동된 디스코드 채널로 즉시 발송됩니다.")}
+    <div class="panel" style="padding:24px; max-width:680px;">
+      <form data-action="submit-rp-report">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+          <div class="field">
+            <label>작성자 정보</label>
+            <input value="${SESSION.rank} ${SESSION.name} (No.${formatBadge(SESSION.badge)})" disabled style="width:100%; opacity:0.7; background:var(--panel2);" />
+          </div>
+          <div class="field">
+            <label>RP 참여 장소</label>
+            <input id="rpLocation" style="width:100%;" placeholder="예) 서부 ATM / 북부 은행" required />
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+          <div class="field">
+            <label>상대방 팩션</label>
+            <input id="rpTargetFaction" style="width:100%;" placeholder="예) 마피아 / 삼합회 / 시민" required />
+          </div>
+          <div class="field">
+            <label>결과</label>
+            <input id="rpResult" style="width:100%;" placeholder="예) 검거 완료 / 무력 진압 / 상황 종료" required />
+          </div>
+        </div>
+
+        <div class="field" style="margin-bottom:20px;">
+          <label>상세 내용 (디스코드 코드블럭 \`\`\`내용\`\`\` 으로 전송됨)</label>
+          <textarea id="rpContent" style="width:100%; min-height:160px; font-family:monospace; line-height:1.5;" placeholder="RP 진행 내역 및 상세 상황을 적어주세요..." required></textarea>
+        </div>
+
+        <button type="submit" class="btn-gold disp" style="width:100%; padding:13px 0; font-size:15px;">📜 디스코드로 RP 보고서 전송</button>
+      </form>
     </div>`;
 }
 
@@ -676,15 +717,20 @@ function renderSettings() {
       <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:12px;">신규 가입 신청 시 이 코드가 필요합니다.</div>
     </div>
     <div class="panel" style="padding:22px; max-width:540px;">
-      <div class="field"><label>디스코드 웹훅 URL</label>
+      <div class="field" style="margin-bottom:14px;">
+        <label>기본 알림 웹훅 URL (출퇴근 등)</label>
         <input id="webhookUrl" class="mono" style="width:100%; font-size:13px;" placeholder="https://discord.com/api/webhooks/..." value="${DATA.webhookUrl || ""}" />
+      </div>
+      <div class="field">
+        <label>📜 RP 보고서 전용 웹훅 URL</label>
+        <input id="rpWebhookUrl" class="mono" style="width:100%; font-size:13px;" placeholder="https://discord.com/api/webhooks/..." value="${DATA.rpWebhookUrl || ""}" />
       </div>
       <div style="display:flex; gap:10px; margin-top:14px;">
         <button data-action="save-webhook" class="btn-gold">저장</button>
         <button data-action="test-webhook" class="btn-ghost">➤ 테스트 전송</button>
       </div>
       <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:16px; line-height:1.7;">
-        출퇴근 기록 및 가입 승인 등 주요 이벤트 발생 시 디스코드로 알림이 전송됩니다.
+        출퇴근 및 가입 알림은 기본 웹훅으로, RP 보고서는 RP 전용 웹훅으로 전송됩니다.
       </div>
     </div>`;
 }
@@ -846,15 +892,16 @@ const CLICK_ACTIONS = {
 
   "save-webhook": async () => {
     const webhookUrl = document.getElementById("webhookUrl").value.trim();
+    const rpWebhookUrl = document.getElementById("rpWebhookUrl").value.trim();
     try {
-      await apiCall("/settings/webhook", "PATCH", { webhookUrl });
+      await apiCall("/settings/webhook", "PATCH", { webhookUrl, rpWebhookUrl });
       showToast("웹훅 주소가 저장되었습니다");
       await fetchFactionData();
     } catch (e) { }
   },
   "test-webhook": async () => {
     const webhookUrl = document.getElementById("webhookUrl").value.trim();
-    if (!webhookUrl) { showToast("웹훅 주소를 먼저 입력하세요", "danger"); return; }
+    if (!webhookUrl) { showToast("웹훅 주소를 먼저 입력하세요.", "danger"); return; }
     try {
       await apiCall("/settings/webhook-test", "POST", { webhookUrl });
       showToast("디스코드로 테스트 메시지를 전송했습니다");
@@ -912,6 +959,21 @@ const SUBMIT_ACTIONS = {
       if (errEl) { errEl.textContent = e.message; errEl.style.display = "block"; }
     }
   },
+  "submit-rp-report": async () => {
+    const location = document.getElementById("rpLocation").value.trim();
+    const targetFaction = document.getElementById("rpTargetFaction").value.trim();
+    const result = document.getElementById("rpResult").value.trim();
+    const content = document.getElementById("rpContent").value.trim();
+
+    try {
+      await apiCall("/rp-reports", "POST", { location, targetFaction, result, content });
+      showToast("RP 보고서가 디스코드로 전송되었습니다!", "ok");
+      document.getElementById("rpLocation").value = "";
+      document.getElementById("rpTargetFaction").value = "";
+      document.getElementById("rpResult").value = "";
+      document.getElementById("rpContent").value = "";
+    } catch (e) { }
+  }
 };
 
 const CHANGE_ACTIONS = {
