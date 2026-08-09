@@ -121,7 +121,6 @@ let LAW_SELECTED = new Set();
 let LAW_CAT = "전체";
 let LAW_SEARCH = "";
 let LAW_LAST_CLICKED = null;
-let LAW_PAY_AMOUNT = "";
 
 /* ------------------------------ API 연동 유틸 ------------------------------ */
 
@@ -186,7 +185,7 @@ function genFactionCode() {
 }
 
 function sealSvg(size) {
-  return `<img src="https://cdn.discordapp.com/attachments/1528679043501789235/1535726792390746143/913409139676dad7.png?ex=6a78d087&is=6a777f07&hm=6cee1df953486d91ef158e2d5f9286e5ee47f7f28b66be52e03a74c9c48988a5&" alt="보안국 로고" class="bureau-logo-img" style="width:${size}px; height:${size}px;" />`;
+  return `<img src="https://cdn.discordapp.com/attachments/1532756181557313706/1532757610464411719/3c9c4182b3e7bae0.png?ex=6a77e683&is=6a769503&hm=7dfc4b4e888cda0fde247badee027883426957dc6dd57700c1cbcdc28b96dacb" alt="보안국 로고" class="bureau-logo-img" style="width:${size}px; height:${size}px;" />`;
 }
 
 function logout() {
@@ -483,70 +482,6 @@ function formatMinutes(n) {
   return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
 }
 
-// 납부액 5,000,000원마다 구금시간 1분 단축(보석 할인, 내림)
-// 벌금 중 미납액은 5,000,000원마다 구금시간 1분 추가(올림)
-// 선택한 죄목의 총 벌금/총 구금시간을 기준으로 실제 납부액 하나만 입력하면
-// 할인분과 추가분을 동시에 계산해 최종 구금시간을 산출한다.
-const BAIL_UNIT = 5000000;
-function computeFinalDetention(totalFine, totalDetention, payAmountStr) {
-  const paid = payAmountStr === "" ? 0 : Math.max(0, Number(payAmountStr) || 0);
-  const unpaid = Math.max(0, totalFine - paid);
-  const bailDiscountMinutes = Math.floor(paid / BAIL_UNIT);
-  const unpaidExtraMinutes = Math.ceil(unpaid / BAIL_UNIT);
-  const finalDetention = Math.max(0, totalDetention - bailDiscountMinutes + unpaidExtraMinutes);
-  return { paid, unpaid, bailDiscountMinutes, unpaidExtraMinutes, finalDetention };
-}
-
-// 선택된 죄목들의 총 벌금/구금시간/건수/수동계산 필요 항목 계산 (검색·카테고리 필터와 무관하게 LAW_SELECTED 기준)
-function computeSelectedTotals() {
-  let totalFine = 0, totalDetention = 0, count = 0, excluded = [];
-  LAW_DATA.forEach(item => {
-    const key = getLawKey(item);
-    if (LAW_SELECTED.has(key)) {
-      count++;
-      const fVal = parseFine(item.fine);
-      if (fVal === null) excluded.push(item.name);
-      else totalFine += fVal;
-      totalDetention += parseDetention(item.detention);
-    }
-  });
-  return { totalFine, totalDetention, count, excluded };
-}
-
-// 결과 패널 HTML (입력 시 이 부분만 갈아끼워서 입력창 포커스 유지)
-function renderPayResultHtml() {
-  const { totalFine, totalDetention, count } = computeSelectedTotals();
-  if (count === 0) {
-    return `<div style="font-size:12.5px; color:var(--muted);">먼저 위 목록에서 죄목을 선택하세요.</div>`;
-  }
-  const { unpaid, bailDiscountMinutes, unpaidExtraMinutes, finalDetention } = computeFinalDetention(totalFine, totalDetention, LAW_PAY_AMOUNT);
-  return `
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-      <span style="font-size:12.5px; color:var(--muted); font-weight:600;">미납액</span>
-      <span class="mono" style="font-size:14px; font-weight:700; color:var(--text);">${formatWon(unpaid)}</span>
-    </div>
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-      <span style="font-size:12.5px; color:var(--muted); font-weight:600;">보석 할인</span>
-      <span class="mono" style="font-size:14px; font-weight:700; color:var(--ok);">-${formatMinutes(bailDiscountMinutes)}</span>
-    </div>
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-      <span style="font-size:12.5px; color:var(--muted); font-weight:600;">미납 추가</span>
-      <span class="mono" style="font-size:14px; font-weight:700; color:var(--danger);">+${formatMinutes(unpaidExtraMinutes)}</span>
-    </div>
-    <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--line); padding-top:10px;">
-      <span style="font-size:13px; color:var(--text); font-weight:700;">최종 구금시간</span>
-      <span class="disp mono" style="font-size:22px; font-weight:700; color:var(--gold);">${formatMinutes(finalDetention)}</span>
-    </div>`;
-}
-
-// 입력창/결과만 갱신 (탭 전체를 다시 그리지 않아 입력 포커스가 유지됨)
-function updatePayAmountUI() {
-  const input = document.getElementById("payAmountInput");
-  if (input) input.value = LAW_PAY_AMOUNT;
-  const box = document.getElementById("payResultBox");
-  if (box) box.innerHTML = renderPayResultHtml();
-}
-
 function renderLawCalc() {
   const categories = ["전체", "건물 알피", "차량 알피", "영장", "경범죄", "중범죄"];
 
@@ -560,7 +495,18 @@ function renderLawCalc() {
     return matchCat && matchQuery;
   });
 
-  const { totalFine, totalDetention, count, excluded } = computeSelectedTotals();
+  let totalFine = 0, totalDetention = 0, count = 0, excluded = [];
+  LAW_DATA.forEach(item => {
+    const key = getLawKey(item);
+    if (LAW_SELECTED.has(key)) {
+      count++;
+      const fVal = parseFine(item.fine);
+      if (fVal === null) excluded.push(item.name);
+      else totalFine += fVal;
+      totalDetention += parseDetention(item.detention);
+    }
+  });
+
   const lastItem = LAW_LAST_CLICKED || (filtered.length > 0 ? filtered[0] : null);
 
   return `
@@ -626,30 +572,6 @@ function renderLawCalc() {
     </div>
 
     ${excluded.length > 0 ? `<div style="font-size:12px; color:var(--danger); margin-bottom:16px; font-weight:600;">⚠ 수동 계산 필요 항목 포함: ${excluded.join(", ")}</div>` : ''}
-
-    <div class="panel" style="padding:22px; max-width:520px; margin-bottom:16px;">
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-        <span style="font-size:17px;">⚖️</span>
-        <span style="font-size:14.5px; font-weight:700; color:var(--text);">최종 구금시간 계산기</span>
-      </div>
-      <div style="font-size:12.5px; color:var(--muted); margin-bottom:14px; line-height:1.6;">
-        선택한 죄목의 총 벌금(<strong style="color:var(--gold);">${count === 0 ? '-' : formatWon(totalFine)}</strong>)과 총 구금시간(<strong style="color:var(--steel);">${count === 0 ? '-' : formatMinutes(totalDetention)}</strong>)을 기준으로, 실제 납부액을 입력하면 보석 할인과 미납 추가 구금이 한번에 계산됩니다. (5,000,000원당 1분)
-      </div>
-      <div style="border-top:1px solid var(--line); padding-top:14px;">
-        <div class="field" style="margin-bottom:8px;">
-          <label>실제 납부액 (원)</label>
-          <input id="payAmountInput" data-action="pay-amount-input" type="number" min="0" step="1" value="${LAW_PAY_AMOUNT}" placeholder="예) 50000000" style="width:100%;" />
-        </div>
-        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px;">
-          <button type="button" class="btn-ghost" data-action="pay-amount-add" data-amount="10000000" style="padding:7px 11px; font-size:11.5px; font-weight:600;">+1,000만</button>
-          <button type="button" class="btn-ghost" data-action="pay-amount-add" data-amount="50000000" style="padding:7px 11px; font-size:11.5px; font-weight:600;">+5,000만</button>
-          <button type="button" class="btn-ghost" data-action="pay-amount-add" data-amount="100000000" style="padding:7px 11px; font-size:11.5px; font-weight:600;">+1억</button>
-          <button type="button" class="btn-ghost" data-action="pay-amount-set-fine" style="padding:7px 11px; font-size:11.5px; font-weight:600;">총 벌금 전액</button>
-          <button type="button" class="btn-ghost danger" data-action="pay-amount-reset" style="padding:7px 11px; font-size:11.5px; font-weight:600;">초기화</button>
-        </div>
-        <div id="payResultBox" class="panel" style="background:var(--panel2); padding:14px 16px;">${renderPayResultHtml()}</div>
-      </div>
-    </div>
 
     ${lastItem ? `
     <div class="panel" style="padding:18px 20px; line-height:1.6; font-size:13.5px;">
@@ -1066,21 +988,6 @@ const CLICK_ACTIONS = {
     LAW_SELECTED.clear();
     refreshTab();
   },
-  "pay-amount-add": (el) => {
-    const amount = Number(el.dataset.amount) || 0;
-    const current = LAW_PAY_AMOUNT === "" ? 0 : (Number(LAW_PAY_AMOUNT) || 0);
-    LAW_PAY_AMOUNT = String(current + amount);
-    updatePayAmountUI();
-  },
-  "pay-amount-set-fine": () => {
-    const { totalFine } = computeSelectedTotals();
-    LAW_PAY_AMOUNT = String(totalFine);
-    updatePayAmountUI();
-  },
-  "pay-amount-reset": () => {
-    LAW_PAY_AMOUNT = "";
-    updatePayAmountUI();
-  },
 
   "toggle-work": async () => {
     try {
@@ -1357,11 +1264,6 @@ const INPUT_ACTIONS = {
   "law-search": (el) => {
     LAW_SEARCH = el.value;
     refreshTab();
-  },
-  "pay-amount-input": (el) => {
-    LAW_PAY_AMOUNT = el.value;
-    const box = document.getElementById("payResultBox");
-    if (box) box.innerHTML = renderPayResultHtml();
   }
 };
 
