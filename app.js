@@ -484,6 +484,17 @@ function parseDetention(text) {
   return match ? parseInt(match[1], 10) : 0;
 }
 
+// "기타 사항"란에 "구금 최소 N분" 형태로 적힌 최소 구금 시간을 추출.
+// 이 시간은 보석금을 내도 줄일 수 없는 시간이므로 보석금 계산에서 제외한다.
+function parseMinDetention(etcText) {
+  if (!etcText) return 0;
+  const match = etcText.match(/구금\s*최소\s*(\d+)\s*분/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+// 보석금 단가: 1분 단축당 5,000,000원
+const BAIL_RATE_PER_MIN = 5000000;
+
 function formatWon(n) { return n.toLocaleString() + " 원"; }
 function formatMinutes(n) {
   if (n <= 0) return "0분";
@@ -533,6 +544,8 @@ function renderLawResults() {
   });
 
   let totalFine = 0, totalDetention = 0, count = 0, excluded = [];
+  let totalMinDetention = 0; // 보석금으로도 줄일 수 없는 최소 구금시간 합계
+  const minDetentionItems = []; // 최소 구금이 있는 선택 항목들 (표시용)
   LAW_DATA.forEach(item => {
     const key = getLawKey(item);
     if (LAW_SELECTED.has(key)) {
@@ -541,8 +554,18 @@ function renderLawResults() {
       if (fVal === null) excluded.push(item.name);
       else totalFine += fVal;
       totalDetention += parseDetention(item.detention);
+
+      const minMins = parseMinDetention(item.etc);
+      if (minMins > 0) {
+        totalMinDetention += minMins;
+        minDetentionItems.push(`${item.name}(${minMins}분)`);
+      }
     }
   });
+
+  // 보석금으로 실제 단축 가능한 시간 = 총 구금시간 - 최소 구금시간(단축 불가)
+  const bailableMinutes = Math.max(0, totalDetention - totalMinDetention);
+  const bailCost = bailableMinutes * BAIL_RATE_PER_MIN;
 
   const lastItem = LAW_LAST_CLICKED || (filtered.length > 0 ? filtered[0] : null);
 
@@ -586,6 +609,11 @@ function renderLawResults() {
       <div class="panel" style="flex:1.5; min-width:220px; padding:16px 20px;">
         <div style="font-size:12px; color:var(--muted); font-weight:600;">총 구금시간</div>
         <div class="disp mono" style="font-size:24px; font-weight:700; color:var(--steel); margin-top:4px;">${count === 0 ? '-' : formatMinutes(totalDetention)}</div>
+      </div>
+      <div class="panel" style="flex:1.5; min-width:220px; padding:16px 20px;">
+        <div style="font-size:12px; color:var(--muted); font-weight:600;">보석금 (구금시간 전액 단축 시)</div>
+        <div class="disp mono" style="font-size:24px; font-weight:700; color:#3ddc84; margin-top:4px;">${count === 0 ? '-' : formatWon(bailCost)}</div>
+        ${totalMinDetention > 0 ? `<div style="font-size:11px; color:var(--muted); margin-top:4px;">※ 최소 구금 ${formatMinutes(totalMinDetention)}은 단축 불가 (${minDetentionItems.join(", ")})</div>` : ''}
       </div>
     </div>
 
