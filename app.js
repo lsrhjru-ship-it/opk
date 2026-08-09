@@ -634,9 +634,19 @@ function renderLawResults() {
 }
 
 // 검색 입력창을 건드리지 않고 결과 영역만 갱신 + 포커스/커서 위치 보존
+// + 항목 목록(.panel, overflow-y:auto) 자체가 통째로 다시 그려지면서
+//   스크롤이 맨 위로 리셋되는 문제를 막기 위해 스크롤 위치도 함께 보존한다.
 function refreshLawResults() {
   const el = document.getElementById("lawResults");
-  if (el) el.innerHTML = renderLawResults();
+  if (!el) return;
+
+  const listPanel = el.querySelector(".panel");
+  const prevScrollTop = listPanel ? listPanel.scrollTop : 0;
+
+  el.innerHTML = renderLawResults();
+
+  const newListPanel = el.querySelector(".panel");
+  if (newListPanel) newListPanel.scrollTop = prevScrollTop;
 }
 
 /* ------------------------------ 팩션원 및 근태 관리 ------------------------------ */
