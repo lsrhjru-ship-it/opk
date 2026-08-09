@@ -159,6 +159,7 @@ async function fetchFactionData() {
       if (me) {
         SESSION.rank = me.rank;
         SESSION.permissions = me.permissions || [];
+        SESSION.isOwner = !!me.isOwner;
         localStorage.setItem("bureau_session", JSON.stringify(SESSION));
       } else {
         // 본인 계정이 삭제된 경우
@@ -1049,14 +1050,14 @@ function renderAccounts() {
     permHtml += `</div>`;
 
     rows += `<div class="table-row row-hover" style="grid-template-columns:${cols}; align-items:center;">
-      <span style="font-weight:600;">${a.name}${a.id === SESSION.id ? '<span class="mono" style="color:var(--gold); font-size:11px;"> (나)</span>' : ''}</span>
+      <span style="font-weight:600;">${a.name}${a.id === SESSION.id ? '<span class="mono" style="color:var(--gold); font-size:11px;"> (나)</span>' : ''}${a.isOwner ? '<span class="mono" style="color:var(--gold); font-size:10px; border:1px solid var(--gold); border-radius:4px; padding:1px 5px; margin-left:6px;">설립자</span>' : ''}</span>
       <span class="mono" style="color:var(--muted);">${a.username}</span>
       <div style="display:flex; gap:6px;">
         <input class="pwInput" data-id="${a.id}" placeholder="변경할 비밀번호" style="padding:6px 10px; font-size:12px; width:100%;" />
         <button class="btn-ghost" data-action="change-password" data-id="${a.id}" style="padding:6px 10px; font-size:12px; white-space:nowrap;">변경</button>
       </div>
       ${permHtml}
-      <button class="icon-btn" data-action="remove-account" data-id="${a.id}">🗑</button>
+      ${a.isOwner ? '' : `<button class="icon-btn" data-action="remove-account" data-id="${a.id}">🗑</button>`}
     </div>`;
   });
 
