@@ -488,6 +488,34 @@ function formatMinutes(n) {
 function renderLawCalc() {
   const categories = ["전체", "건물 알피", "차량 알피", "영장", "경범죄", "중범죄"];
 
+  return `
+    ${header("법률 검색 및 계산기", "죄목을 선택하면 벌금과 구금시간이 자동으로 합산됩니다.")}
+    
+    <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
+      ${categories.map(c => `
+        <button class="btn-ghost ${LAW_CAT === c ? 'active' : ''}" 
+                data-action="law-cat" data-cat="${c}" 
+                style="padding:8px 16px; font-size:13px; font-weight:600; ${LAW_CAT === c ? 'background:var(--gold); color:#000;' : ''}">
+          ${c}
+        </button>
+      `).join("")}
+    </div>
+
+    <div class="panel" style="display:flex; align-items:center; gap:12px; padding:10px 16px; margin-bottom:16px;">
+      <span style="color:var(--muted); font-size:15px;">🔍</span>
+      <input id="lawSearchInput" data-action="law-search" value="${LAW_SEARCH}" placeholder="검색어 입력 (죄목, 키워드, 위치)" style="background:transparent; border:none; color:var(--text); width:100%; font-size:14px; outline:none;" />
+      <button data-action="law-select-all" class="btn-gold" style="padding:6px 12px; font-size:12px; white-space:nowrap;">전체 선택</button>
+      <button data-action="law-clear-all" class="btn-ghost" style="padding:6px 12px; font-size:12px; white-space:nowrap;">선택 해제</button>
+    </div>
+
+    <div id="lawResults">${renderLawResults()}</div>
+  `;
+}
+
+// 검색/카테고리/선택 상태가 바뀔 때마다 이 부분만 갱신한다.
+// (검색창 자체를 갈아끼우지 않아야 입력 중 포커스/커서 위치가 유지되어
+//  "타이핑이 계속 끊기는" 문제가 발생하지 않는다.)
+function renderLawResults() {
   const query = LAW_SEARCH.trim().toLowerCase();
   const filtered = LAW_DATA.filter(item => {
     const matchCat = LAW_CAT === "전체" || item.category === LAW_CAT;
@@ -513,25 +541,6 @@ function renderLawCalc() {
   const lastItem = LAW_LAST_CLICKED || (filtered.length > 0 ? filtered[0] : null);
 
   return `
-    ${header("법률 검색 및 계산기", "죄목을 선택하면 벌금과 구금시간이 자동으로 합산됩니다.")}
-    
-    <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
-      ${categories.map(c => `
-        <button class="btn-ghost ${LAW_CAT === c ? 'active' : ''}" 
-                data-action="law-cat" data-cat="${c}" 
-                style="padding:8px 16px; font-size:13px; font-weight:600; ${LAW_CAT === c ? 'background:var(--gold); color:#000;' : ''}">
-          ${c}
-        </button>
-      `).join("")}
-    </div>
-
-    <div class="panel" style="display:flex; align-items:center; gap:12px; padding:10px 16px; margin-bottom:16px;">
-      <span style="color:var(--muted); font-size:15px;">🔍</span>
-      <input id="lawSearchInput" data-action="law-search" value="${LAW_SEARCH}" placeholder="검색어 입력 (죄목, 키워드, 위치)" style="background:transparent; border:none; color:var(--text); width:100%; font-size:14px; outline:none;" />
-      <button data-action="law-select-all" class="btn-gold" style="padding:6px 12px; font-size:12px; white-space:nowrap;">전체 선택</button>
-      <button data-action="law-clear-all" class="btn-ghost" style="padding:6px 12px; font-size:12px; white-space:nowrap;">선택 해제</button>
-    </div>
-
     <div class="panel" style="margin-bottom:16px; max-height:420px; overflow-y:auto;">
       <div class="table-head" style="grid-template-columns: 50px 100px 1.5fr 1fr 1fr 2fr; sticky; top:0; background:var(--panel); z-index:2;">
         <span style="text-align:center;">선택</span>
@@ -584,6 +593,12 @@ function renderLawCalc() {
       <div style="color:var(--muted);">${lastItem.etc || "없음"}</div>
     </div>` : ''}
   `;
+}
+
+// 검색 입력창을 건드리지 않고 결과 영역만 갱신 + 포커스/커서 위치 보존
+function refreshLawResults() {
+  const el = document.getElementById("lawResults");
+  if (el) el.innerHTML = renderLawResults();
 }
 
 /* ------------------------------ 팩션원 및 근태 관리 ------------------------------ */
@@ -993,21 +1008,32 @@ const CLICK_ACTIONS = {
 
   "logout": () => logout(),
 
-  "law-cat": (el) => { LAW_CAT = el.dataset.cat; refreshTab(); },
+  // 카테고리/선택 관련 클릭은 검색 입력창을 다시 그리지 않도록
+  // 탭 전체(refreshTab)가 아니라 결과 영역(#lawResults)만 갱신한다.
+  "law-cat": (el) => {
+    LAW_CAT = el.dataset.cat;
+    document.querySelectorAll('[data-action="law-cat"]').forEach(btn => {
+      const active = btn.dataset.cat === LAW_CAT;
+      btn.classList.toggle('active', active);
+      btn.style.background = active ? 'var(--gold)' : '';
+      btn.style.color = active ? '#000' : '';
+    });
+    refreshLawResults();
+  },
   "law-toggle": (el) => {
     const key = el.dataset.key;
     if (LAW_SELECTED.has(key)) LAW_SELECTED.delete(key);
     else LAW_SELECTED.add(key);
     LAW_LAST_CLICKED = LAW_DATA.find(i => getLawKey(i) === key);
-    refreshTab();
+    refreshLawResults();
   },
   "law-select-all": () => {
     LAW_DATA.forEach(i => LAW_SELECTED.add(getLawKey(i)));
-    refreshTab();
+    refreshLawResults();
   },
   "law-clear-all": () => {
     LAW_SELECTED.clear();
-    refreshTab();
+    refreshLawResults();
   },
 
   "toggle-work": async () => {
@@ -1279,12 +1305,13 @@ const CHANGE_ACTIONS = {
 const INPUT_ACTIONS = {
   "search-members": (el) => {
     const q = el.value;
-    const list = DATA.accounts.filter(a => a.name.includes(q) || a.badge.includes(q));
+    const list = DATA.accounts.filter(a => a.name.includes(q) || String(a.badge || "").includes(q));
     document.getElementById("memberList").innerHTML = renderMemberRows(list);
   },
   "law-search": (el) => {
+    // 결과 영역만 갱신하고 검색창 자체(el)는 건드리지 않는다 -> 포커스/커서 유지
     LAW_SEARCH = el.value;
-    refreshTab();
+    refreshLawResults();
   },
   "search-notices": (el) => {
     // 캐럿(커서) 위치를 보존하기 위해 전체 탭이 아닌 목록 부분만 갱신한다.
