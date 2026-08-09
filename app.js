@@ -122,6 +122,9 @@ let LAW_CAT = "전체";
 let LAW_SEARCH = "";
 let LAW_LAST_CLICKED = null;
 
+// 사이드 공지 검색 상태
+let NOTICE_SEARCH = "";
+
 /* ------------------------------ API 연동 유틸 ------------------------------ */
 
 async function apiCall(endpoint, method = "GET", body = null) {
@@ -749,30 +752,44 @@ function renderAttendance() {
   return html;
 }
 
-function renderNotices() {
-  const notices = DATA.sideNotices;
-  const canManage = hasPermission("notices");
+/* ------------------------------ 사이드 공지 탭 (검색 기능 포함) ------------------------------ */
 
-  let listHtml = "";
+function renderNoticeList(notices, canManage) {
   if (notices.length === 0) {
-    listHtml = `<div style="padding:36px; text-align:center; color:var(--muted); font-size:13.5px; border-top:1px solid var(--line);">등록된 공지가 없습니다.</div>`;
-  } else {
-    notices.forEach((n, idx) => {
-      const displayId = (idx + 1).toString().padStart(4, '0');
-      listHtml += `
-      <div class="notice-row row-hover">
-        <div class="mono notice-id">${displayId}</div>
-        <div class="notice-body">
-           <div class="notice-title">${n.title}</div>
-           <textarea class="notice-textarea" readonly id="notice_text_${n.id}">${n.content}</textarea>
-        </div>
-        <div class="notice-actions">
-           <button class="btn-ghost" data-action="copy-notice" data-id="${n.id}" style="padding:7px; font-size:12px;">복사</button>
-           ${canManage ? `<button class="btn-ghost danger" data-action="del-notice" data-id="${n.id}" style="padding:7px; font-size:12px;">삭제</button>` : ""}
-        </div>
-      </div>`;
-    });
+    const emptyMsg = NOTICE_SEARCH.trim() ? "검색 결과가 없습니다." : "등록된 공지가 없습니다.";
+    return `<div style="padding:36px; text-align:center; color:var(--muted); font-size:13.5px; border-top:1px solid var(--line);">${emptyMsg}</div>`;
   }
+  let html = "";
+  notices.forEach((n, idx) => {
+    const displayId = (idx + 1).toString().padStart(4, '0');
+    html += `
+    <div class="notice-row row-hover">
+      <div class="mono notice-id">${displayId}</div>
+      <div class="notice-body">
+         <div class="notice-title">${n.title}</div>
+         <textarea class="notice-textarea" readonly id="notice_text_${n.id}">${n.content}</textarea>
+      </div>
+      <div class="notice-actions">
+         <button class="btn-ghost" data-action="copy-notice" data-id="${n.id}" style="padding:7px; font-size:12px;">복사</button>
+         ${canManage ? `<button class="btn-ghost danger" data-action="del-notice" data-id="${n.id}" style="padding:7px; font-size:12px;">삭제</button>` : ""}
+      </div>
+    </div>`;
+  });
+  return html;
+}
+
+function getFilteredNotices() {
+  const query = NOTICE_SEARCH.trim().toLowerCase();
+  if (!query) return DATA.sideNotices;
+  return DATA.sideNotices.filter(n =>
+    (n.title && n.title.toLowerCase().includes(query)) ||
+    (n.content && n.content.toLowerCase().includes(query))
+  );
+}
+
+function renderNotices() {
+  const canManage = hasPermission("notices");
+  const filtered = getFilteredNotices();
 
   const createFormHtml = canManage ? `
     <div class="panel" style="padding:18px; margin-bottom:22px; display:flex; gap:12px; flex-direction:column;">
@@ -782,15 +799,19 @@ function renderNotices() {
     </div>` : "";
 
   return `
-    ${header("사이드 공지", `복사하여 바로 사용할 수 있는 사전 지정 양식 (개수 : ${notices.length})`)}
+    ${header("사이드 공지", `복사하여 바로 사용할 수 있는 사전 지정 양식 (전체 ${DATA.sideNotices.length}건${NOTICE_SEARCH.trim() ? ` · 검색결과 ${filtered.length}건` : ""})`)}
     ${createFormHtml}
+    <div class="panel" style="display:flex; align-items:center; gap:8px; margin-bottom:14px; padding:6px 14px; max-width:320px;">
+      <span style="color:var(--muted);">⌕</span>
+      <input id="noticeSearch" data-action="search-notices" value="${NOTICE_SEARCH}" placeholder="제목 또는 내용 검색" style="background:transparent; border:none; padding:6px 0; width:100%; box-shadow:none;" />
+    </div>
     <div class="panel">
       <div style="display:flex; padding:12px 18px; border-bottom:1px solid var(--line); font-size:12px; color:var(--muted); font-weight:600; text-align:center;">
          <div style="width:60px;">#</div>
          <div style="flex:1;">사이드 공지 - 제목 / 클립보드(복사) 내용</div>
          <div style="width:${canManage ? "70px" : "50px"};">작업</div>
       </div>
-      ${listHtml}
+      <div id="noticeList">${renderNoticeList(filtered, canManage)}</div>
     </div>`;
 }
 
@@ -1264,6 +1285,14 @@ const INPUT_ACTIONS = {
   "law-search": (el) => {
     LAW_SEARCH = el.value;
     refreshTab();
+  },
+  "search-notices": (el) => {
+    // 캐럿(커서) 위치를 보존하기 위해 전체 탭이 아닌 목록 부분만 갱신한다.
+    NOTICE_SEARCH = el.value;
+    const canManage = hasPermission("notices");
+    const filtered = getFilteredNotices();
+    const listEl = document.getElementById("noticeList");
+    if (listEl) listEl.innerHTML = renderNoticeList(filtered, canManage);
   }
 };
 
