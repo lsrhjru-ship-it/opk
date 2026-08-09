@@ -615,6 +615,10 @@ function renderLawResults() {
         <div class="disp mono" style="font-size:24px; font-weight:700; color:#3ddc84; margin-top:4px;">${count === 0 ? '-' : formatWon(bailCost)}</div>
         ${totalMinDetention > 0 ? `<div style="font-size:11px; color:var(--muted); margin-top:4px;">※ 최소 구금 ${formatMinutes(totalMinDetention)}은 단축 불가 (${minDetentionItems.join(", ")})</div>` : ''}
       </div>
+      <div class="panel" style="flex:1.5; min-width:220px; padding:16px 20px; border:1px solid var(--gold);">
+        <div style="font-size:12px; color:var(--muted); font-weight:600;">총 납부액 (벌금 + 보석금)</div>
+        <div class="disp mono" style="font-size:24px; font-weight:700; color:var(--gold); margin-top:4px;">${count === 0 ? '-' : formatWon(totalFine + bailCost)}</div>
+      </div>
     </div>
 
     ${excluded.length > 0 ? `<div style="font-size:12px; color:var(--danger); margin-bottom:16px; font-weight:600;">⚠ 수동 계산 필요 항목 포함: ${excluded.join(", ")}</div>` : ''}
