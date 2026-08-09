@@ -185,7 +185,7 @@ function genFactionCode() {
 }
 
 function sealSvg(size) {
-  return `<img src="https://cdn.discordapp.com/attachments/1528679043501789235/1535726792390746143/913409139676dad7.png?ex=6a78d087&is=6a777f07&hm=6cee1df953486d91ef158e2d5f9286e5ee47f7f28b66be52e03a74c9c48988a5&" alt="보안국 로고" class="bureau-logo-img" style="width:${size}px; height:${size}px;" />`;
+  return `<img src="https://cdn.discordapp.com/attachments/1532756181557313706/1532757610464411719/3c9c4182b3e7bae0.png?ex=6a77e683&is=6a769503&hm=7dfc4b4e888cda0fde247badee027883426957dc6dd57700c1cbcdc28b96dacb" alt="보안국 로고" class="bureau-logo-img" style="width:${size}px; height:${size}px;" />`;
 }
 
 function logout() {
