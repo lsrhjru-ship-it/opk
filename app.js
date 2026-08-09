@@ -121,7 +121,8 @@ let LAW_SELECTED = new Set();
 let LAW_CAT = "전체";
 let LAW_SEARCH = "";
 let LAW_LAST_CLICKED = null;
-let LAW_PAID = "";
+let LAW_BAIL_PAY = "";
+let LAW_UNPAID = "";
 
 /* ------------------------------ API 연동 유틸 ------------------------------ */
 
@@ -483,21 +484,17 @@ function formatMinutes(n) {
   return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
 }
 
-// 벌금 미납/초과지불(보석금)에 따른 구금시간 재계산
-// - 벌금이 부족하면(paid < fine) 부족분 5,000,000원마다 구금시간 1분 추가
-// - 벌금을 초과 지불하면(paid > fine, 보석금) 초과분 5,000,000원마다 구금시간 1분 차감 (최소 0분)
+// 보석금 제도: 납부액 5,000,000원마다 구금시간 1분 단축 (내림 계산)
+// 벌금 미납: 미납액 5,000,000원마다 구금시간 1분 추가 (올림 계산)
+// 두 계산기는 서로 독립적으로 동작한다 (죄목 선택의 총 벌금과 무관하게 직접 입력한 금액 기준)
 const BAIL_UNIT = 5000000;
-function computeBailAdjustment(paid, fine, detention) {
-  if (paid === null || isNaN(paid) || paid < 0) return null;
-  const diff = paid - fine;
-  let extraMinutes = 0, reducedMinutes = 0;
-  if (diff < 0) {
-    extraMinutes = Math.ceil(Math.abs(diff) / BAIL_UNIT);
-  } else if (diff > 0) {
-    reducedMinutes = Math.floor(diff / BAIL_UNIT);
-  }
-  const finalDetention = Math.max(0, detention + extraMinutes - reducedMinutes);
-  return { diff, extraMinutes, reducedMinutes, finalDetention };
+function computeBailMinutes(amount) {
+  if (amount === null || isNaN(amount) || amount < 0) return null;
+  return Math.floor(amount / BAIL_UNIT);
+}
+function computeUnpaidMinutes(amount) {
+  if (amount === null || isNaN(amount) || amount < 0) return null;
+  return Math.ceil(amount / BAIL_UNIT);
 }
 
 // 선택된 죄목들의 총 벌금/구금시간/건수/수동계산 필요 항목 계산 (검색·카테고리 필터와 무관하게 LAW_SELECTED 기준)
@@ -516,43 +513,46 @@ function computeSelectedTotals() {
   return { totalFine, totalDetention, count, excluded };
 }
 
-// 보석금 계산 결과 패널 HTML만 따로 생성 (입력 시 이 부분만 갈아끼워서 입력창 포커스를 유지하기 위함)
-function renderBailResultHtml() {
-  const { totalFine, totalDetention, count } = computeSelectedTotals();
-  const paidNum = LAW_PAID === "" ? null : Number(LAW_PAID);
-  const bail = (count > 0 && paidNum !== null) ? computeBailAdjustment(paidNum, totalFine, totalDetention) : null;
-
-  if (count === 0) {
-    return `<div style="margin-top:12px; font-size:12.5px; color:var(--muted);">먼저 위에서 죄목을 선택하세요.</div>`;
+// 보석금 계산기 결과 HTML (입력 시 이 부분만 갈아끼워서 입력창 포커스 유지)
+function renderBailPayResultHtml() {
+  const amount = LAW_BAIL_PAY === "" ? null : Number(LAW_BAIL_PAY);
+  const minutes = computeBailMinutes(amount);
+  if (amount === null) {
+    return `<div style="font-size:12.5px; color:var(--muted);">납부액을 입력하면 단축 시간이 계산됩니다.</div>`;
   }
-  if (paidNum === null) {
-    return `<div style="margin-top:12px; font-size:12.5px; color:var(--muted);">보유 금액을 입력하면 최종 구금시간이 계산됩니다.</div>`;
-  }
-  if (!bail) return "";
-
-  return `
-    <div style="display:flex; gap:16px; margin-top:14px; flex-wrap:wrap;">
-      <div style="flex:1; min-width:160px;">
-        <div style="font-size:11.5px; color:var(--muted); font-weight:600;">${bail.diff < 0 ? "부족한 벌금" : bail.diff > 0 ? "초과 지불(보석금)" : "차액"}</div>
-        <div class="disp mono" style="font-size:18px; font-weight:700; color:${bail.diff < 0 ? "var(--danger)" : "var(--gold)"}; margin-top:2px;">${formatWon(Math.abs(bail.diff))}</div>
-      </div>
-      <div style="flex:1; min-width:160px;">
-        <div style="font-size:11.5px; color:var(--muted); font-weight:600;">${bail.diff < 0 ? "추가 구금" : "차감 구금"}</div>
-        <div class="disp mono" style="font-size:18px; font-weight:700; color:${bail.diff < 0 ? "var(--danger)" : "var(--ok)"}; margin-top:2px;">${bail.diff < 0 ? "+" : "-"}${formatMinutes(bail.diff < 0 ? bail.extraMinutes : bail.reducedMinutes)}</div>
-      </div>
-      <div style="flex:1; min-width:160px;">
-        <div style="font-size:11.5px; color:var(--muted); font-weight:600;">최종 구금시간</div>
-        <div class="disp mono" style="font-size:18px; font-weight:700; color:var(--steel); margin-top:2px;">${formatMinutes(bail.finalDetention)}</div>
-      </div>
-    </div>`;
+  return `<div style="display:flex; justify-content:space-between; align-items:center;">
+    <span style="font-size:12.5px; color:var(--muted); font-weight:600;">단축 시간</span>
+    <span class="disp mono" style="font-size:20px; font-weight:700; color:var(--ok);">-${formatMinutes(minutes)}</span>
+  </div>`;
 }
 
-// 보유 금액 입력창/결과 패널만 갱신 (탭 전체를 다시 그리지 않아 입력 포커스가 유지됨)
-function updateBailInputUI() {
-  const input = document.getElementById("lawPaidInput");
-  if (input) input.value = LAW_PAID;
-  const box = document.getElementById("lawBailResultBox");
-  if (box) box.innerHTML = renderBailResultHtml();
+// 벌금 미납 계산기 결과 HTML
+function renderUnpaidResultHtml() {
+  const amount = LAW_UNPAID === "" ? null : Number(LAW_UNPAID);
+  const minutes = computeUnpaidMinutes(amount);
+  if (amount === null) {
+    return `<div style="font-size:12.5px; color:var(--muted);">미납액을 입력하면 추가 구금시간이 계산됩니다.</div>`;
+  }
+  return `<div style="display:flex; justify-content:space-between; align-items:center;">
+    <span style="font-size:12.5px; color:var(--muted); font-weight:600;">추가 구금</span>
+    <span class="disp mono" style="font-size:20px; font-weight:700; color:var(--danger);">+${formatMinutes(minutes)}</span>
+  </div>`;
+}
+
+// 보석금 입력창/결과만 갱신 (탭 전체를 다시 그리지 않아 입력 포커스가 유지됨)
+function updateBailPayUI() {
+  const input = document.getElementById("bailPayInput");
+  if (input) input.value = LAW_BAIL_PAY;
+  const box = document.getElementById("bailPayResultBox");
+  if (box) box.innerHTML = renderBailPayResultHtml();
+}
+
+// 미납 입력창/결과만 갱신
+function updateUnpaidUI() {
+  const input = document.getElementById("unpaidInput");
+  if (input) input.value = LAW_UNPAID;
+  const box = document.getElementById("unpaidResultBox");
+  if (box) box.innerHTML = renderUnpaidResultHtml();
 }
 
 function renderLawCalc() {
@@ -570,7 +570,6 @@ function renderLawCalc() {
 
   const { totalFine, totalDetention, count, excluded } = computeSelectedTotals();
   const lastItem = LAW_LAST_CLICKED || (filtered.length > 0 ? filtered[0] : null);
-  const bailResultHtml = renderBailResultHtml();
 
   return `
     ${header("법률 검색 및 계산기", "죄목을 선택하면 벌금과 구금시간이 자동으로 합산됩니다.")}
@@ -648,10 +647,24 @@ function renderLawCalc() {
           <span class="mono" style="font-weight:700; color:var(--text); text-decoration:line-through; text-decoration-color:var(--muted);">₩${BAIL_UNIT.toLocaleString()}</span>
           <span class="mono" style="color:var(--gold); font-weight:700;">1분</span>
         </div>
-        <div style="font-size:12px; color:var(--muted); line-height:1.9;">
+        <div style="font-size:12px; color:var(--muted); line-height:1.9; margin-bottom:16px;">
           예시)<br/>
           · 10분 단축 → 5,000만 원<br/>
           · 20분 단축 → 1억 원
+        </div>
+
+        <div style="border-top:1px solid var(--line); padding-top:14px;">
+          <div class="field" style="margin-bottom:8px;">
+            <label>보석금 납부액 (원)</label>
+            <input id="bailPayInput" data-action="bail-pay-input" type="number" min="0" step="1" value="${LAW_BAIL_PAY}" placeholder="예) 50000000" style="width:100%;" />
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px;">
+            <button type="button" class="btn-ghost" data-action="bail-pay-add" data-amount="10000000" style="padding:7px 11px; font-size:11.5px; font-weight:600;">+1,000만</button>
+            <button type="button" class="btn-ghost" data-action="bail-pay-add" data-amount="50000000" style="padding:7px 11px; font-size:11.5px; font-weight:600;">+5,000만</button>
+            <button type="button" class="btn-ghost" data-action="bail-pay-add" data-amount="100000000" style="padding:7px 11px; font-size:11.5px; font-weight:600;">+1억</button>
+            <button type="button" class="btn-ghost danger" data-action="bail-pay-reset" style="padding:7px 11px; font-size:11.5px; font-weight:600;">초기화</button>
+          </div>
+          <div id="bailPayResultBox" class="panel" style="background:var(--panel2); padding:12px 14px;">${renderBailPayResultHtml()}</div>
         </div>
       </div>
 
@@ -666,33 +679,27 @@ function renderLawCalc() {
           <span class="mono" style="font-weight:700; color:var(--text); text-decoration:line-through; text-decoration-color:var(--muted);">₩${BAIL_UNIT.toLocaleString()}</span>
           <span class="mono" style="color:var(--danger); font-weight:700;">1분</span>
         </div>
-        <div style="font-size:12px; color:var(--muted); line-height:1.9;">
+        <div style="font-size:12px; color:var(--muted); line-height:1.9; margin-bottom:16px;">
           예시)<br/>
           · 벌금 2,000만 원 미납 → 4분 추가 구금<br/>
           · 벌금 5,000만 원 미납 → 10분 추가 구금
         </div>
-      </div>
-    </div>
 
-    <div class="panel" style="padding:18px 20px; margin-bottom:16px;">
-      <div style="font-size:13px; color:var(--muted); font-weight:700; margin-bottom:10px;">구금시간 자동 계산</div>
-      <div style="font-size:12px; color:var(--muted); margin-bottom:12px; line-height:1.6;">
-        선택한 죄목의 총 벌금 대비 실제 보유 금액을 입력하면, 위 기준에 따라 부족분은 추가 구금(올림 계산)으로, 초과 지불(보석금)은 구금 단축(내림 계산)으로 자동 반영됩니다.
-      </div>
-      <div style="display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap;">
-        <div class="field">
-          <label>보유 금액 (원)</label>
-          <input id="lawPaidInput" data-action="law-paid" type="number" min="0" step="1" value="${LAW_PAID}" placeholder="예) 100000000" style="width:220px;" />
-        </div>
-        <div style="display:flex; gap:6px; flex-wrap:wrap; padding-bottom:1px;">
-          <button type="button" class="btn-ghost" data-action="law-paid-add" data-amount="10000000" style="padding:9px 13px; font-size:12px; font-weight:600;">+1,000만</button>
-          <button type="button" class="btn-ghost" data-action="law-paid-add" data-amount="50000000" style="padding:9px 13px; font-size:12px; font-weight:600;">+5,000만</button>
-          <button type="button" class="btn-ghost" data-action="law-paid-add" data-amount="100000000" style="padding:9px 13px; font-size:12px; font-weight:600;">+1억</button>
-          <button type="button" class="btn-gold" data-action="law-paid-set-fine" style="padding:9px 13px; font-size:12px; font-weight:600;">벌금 전액</button>
-          <button type="button" class="btn-ghost danger" data-action="law-paid-reset" style="padding:9px 13px; font-size:12px; font-weight:600;">초기화</button>
+        <div style="border-top:1px solid var(--line); padding-top:14px;">
+          <div class="field" style="margin-bottom:8px;">
+            <label>미납 금액 (원)</label>
+            <input id="unpaidInput" data-action="unpaid-input" type="number" min="0" step="1" value="${LAW_UNPAID}" placeholder="예) 20000000" style="width:100%;" />
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px;">
+            <button type="button" class="btn-ghost" data-action="unpaid-add" data-amount="10000000" style="padding:7px 11px; font-size:11.5px; font-weight:600;">+1,000만</button>
+            <button type="button" class="btn-ghost" data-action="unpaid-add" data-amount="50000000" style="padding:7px 11px; font-size:11.5px; font-weight:600;">+5,000만</button>
+            <button type="button" class="btn-ghost" data-action="unpaid-add" data-amount="100000000" style="padding:7px 11px; font-size:11.5px; font-weight:600;">+1억</button>
+            <button type="button" class="btn-ghost" data-action="unpaid-set-fine" style="padding:7px 11px; font-size:11.5px; font-weight:600;">선택한 총 벌금</button>
+            <button type="button" class="btn-ghost danger" data-action="unpaid-reset" style="padding:7px 11px; font-size:11.5px; font-weight:600;">초기화</button>
+          </div>
+          <div id="unpaidResultBox" class="panel" style="background:var(--panel2); padding:12px 14px;">${renderUnpaidResultHtml()}</div>
         </div>
       </div>
-      <div id="lawBailResultBox">${bailResultHtml}</div>
     </div>
 
     ${lastItem ? `
@@ -1110,20 +1117,30 @@ const CLICK_ACTIONS = {
     LAW_SELECTED.clear();
     refreshTab();
   },
-  "law-paid-add": (el) => {
+  "bail-pay-add": (el) => {
     const amount = Number(el.dataset.amount) || 0;
-    const current = LAW_PAID === "" ? 0 : (Number(LAW_PAID) || 0);
-    LAW_PAID = String(current + amount);
-    updateBailInputUI();
+    const current = LAW_BAIL_PAY === "" ? 0 : (Number(LAW_BAIL_PAY) || 0);
+    LAW_BAIL_PAY = String(current + amount);
+    updateBailPayUI();
   },
-  "law-paid-set-fine": () => {
+  "bail-pay-reset": () => {
+    LAW_BAIL_PAY = "";
+    updateBailPayUI();
+  },
+  "unpaid-add": (el) => {
+    const amount = Number(el.dataset.amount) || 0;
+    const current = LAW_UNPAID === "" ? 0 : (Number(LAW_UNPAID) || 0);
+    LAW_UNPAID = String(current + amount);
+    updateUnpaidUI();
+  },
+  "unpaid-set-fine": () => {
     const { totalFine } = computeSelectedTotals();
-    LAW_PAID = String(totalFine);
-    updateBailInputUI();
+    LAW_UNPAID = String(totalFine);
+    updateUnpaidUI();
   },
-  "law-paid-reset": () => {
-    LAW_PAID = "";
-    updateBailInputUI();
+  "unpaid-reset": () => {
+    LAW_UNPAID = "";
+    updateUnpaidUI();
   },
 
   "toggle-work": async () => {
