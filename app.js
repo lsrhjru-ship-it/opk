@@ -331,27 +331,33 @@ function renderShell(tabs) {
     ? `<button data-action="toggle-work" class="btn-ghost danger" style="margin-top:10px; width:100%; padding:9px 0; font-size:12.5px; font-weight:600;">퇴근하기 (근무 중)</button>`
     : `<button data-action="toggle-work" class="btn-ghost ok" style="margin-top:10px; width:100%; padding:9px 0; font-size:12.5px; font-weight:600;">출근하기</button>`;
 
+  // height:100vh(고정) + overflow:hidden 으로 바깥 컨테이너 높이를 화면에 고정한다.
+  // (기존에는 min-height:100vh 였는데, 탭 내용이 길어지면(예: 사이드 공지 목록)
+  //  컨테이너 자체가 내용 높이만큼 늘어나고, aside가 align-items:stretch로
+  //  그 늘어난 높이에 맞춰 같이 늘어나면서 하단의 이름/출근하기/로그아웃 패널이
+  //  화면 밖으로 밀려나는 버그가 있었다. main에만 overflow-y:auto + min-height:0을
+  //  줘서 내용이 길 때 가운데 영역만 스크롤되고 사이드바는 항상 고정 높이를 유지하도록 수정.)
   return `
-  <div style="min-height:100vh; display:flex; position:relative; background:var(--bg);">
-    <aside class="panel" style="width:230px; margin:16px 0 16px 16px; border-radius:var(--radius-lg); display:flex; flex-direction:column; flex-shrink:0;">
-      <div style="padding:22px 20px; display:flex; align-items:center; gap:12px; border-bottom:1px solid var(--line);">
+  <div style="height:100vh; display:flex; position:relative; background:var(--bg); overflow:hidden;">
+    <aside class="panel" style="width:230px; margin:16px 0 16px 16px; border-radius:var(--radius-lg); display:flex; flex-direction:column; flex-shrink:0; min-height:0;">
+      <div style="padding:22px 20px; display:flex; align-items:center; gap:12px; border-bottom:1px solid var(--line); flex-shrink:0;">
         ${sealSvg(42)}
         <div>
           <div class="disp" style="font-size:15px; font-weight:700; color:var(--text);">${DATA.name}</div>
           <div class="mono" style="font-size:10px; color:var(--muted); font-weight:600;">INTRANET SYS</div>
         </div>
       </div>
-      <nav style="padding:14px; display:flex; flex-direction:column; gap:4px; flex:1;">
+      <nav style="padding:14px; display:flex; flex-direction:column; gap:4px; flex:1; overflow-y:auto; min-height:0;">
         ${tabs.map(t => `<button class="tab-btn ${TAB === t.key ? 'active' : ''}" data-action="switch-tab" data-tab="${t.key}">${t.label}</button>`).join("")}
       </nav>
-      <div style="padding:16px; border-top:1px solid var(--line); background:var(--panel2); border-radius:0 0 var(--radius-lg) var(--radius-lg);">
+      <div style="padding:16px; border-top:1px solid var(--line); background:var(--panel2); border-radius:0 0 var(--radius-lg) var(--radius-lg); flex-shrink:0;">
         <div style="font-size:13.5px; font-weight:700;">${SESSION.name}</div>
         <div class="mono" style="font-size:11px; color:var(--gold); font-weight:600; margin-top:2px;">${SESSION.rank} · No.${formatBadge(SESSION.badge)}</div>
         ${workBtnHtml}
         <button data-action="logout" class="btn-ghost" style="margin-top:8px; width:100%; padding:8px 0; font-size:12px; border-color:var(--line); color:var(--muted);">로그아웃</button>
       </div>
     </aside>
-    <main style="flex:1; padding:24px 28px; overflow:auto; position:relative; z-index:1;">
+    <main style="flex:1; padding:24px 28px; overflow-y:auto; position:relative; z-index:1; min-height:0;">
       <div class="fade-up" id="tabContent">${renderTab()}</div>
     </main>
   </div>`;
