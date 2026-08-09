@@ -417,6 +417,7 @@ function renderDash() {
       ${statCard("등록 공지", DATA.sideNotices.length, "var(--ok)")}
     </div>
     ${renderRankingPanelHtml("근무 총시간 순위 TOP 5", 5)}
+    ${renderRpRankingPanelHtml("RP 보고서 작성 순위 TOP 5", 5)}
     <div class="panel">
       <div style="padding:14px 20px; border-bottom:1px solid var(--line); font-size:13px; color:var(--muted); font-weight:700;">최근 내부경고</div>
       ${recent.length === 0 ? `<div style="padding:30px; text-align:center; color:var(--muted); font-size:13.5px;">등록된 내부경고가 없습니다.</div>` :
@@ -429,10 +430,66 @@ function renderDash() {
 
 /* ------------------------------ RP 보고서 탭 ------------------------------ */
 
+// 팩션원별 RP 보고서 작성 건수 집계 (많이 작성한 순)
+function computeRpReportRanking() {
+  const totals = {};
+  (DATA.rpReports || []).forEach(r => {
+    const key = r.user_id || `${r.name}_${r.badge}`;
+    if (!totals[key]) totals[key] = { name: r.name, badge: r.badge, count: 0 };
+    totals[key].count += 1;
+  });
+  return Object.values(totals).sort((a, b) => b.count - a.count);
+}
+
+// RP 보고서 작성 순위 패널 HTML (건수 기준)
+function renderRpRankingPanelHtml(title, limit) {
+  const ranking = computeRpReportRanking();
+  const list = limit ? ranking.slice(0, limit) : ranking;
+
+  let html = `<div class="panel" style="margin-bottom:18px;">
+    <div style="padding:14px 20px; border-bottom:1px solid var(--line); font-size:13px; color:var(--muted); font-weight:700;">${title}</div>`;
+
+  if (list.length === 0) {
+    html += `<div style="padding:24px; text-align:center; color:var(--muted); font-size:13.5px;">등록된 RP 보고서가 없습니다.</div>`;
+  } else {
+    list.forEach((r, idx) => {
+      const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : String(idx + 1);
+      html += `<div class="row-hover" style="display:flex; justify-content:space-between; align-items:center; padding:10px 20px; border-top:1px solid var(--line);">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="mono" style="width:22px; text-align:center; font-weight:700; color:${idx < 3 ? "var(--gold)" : "var(--muted)"};">${medal}</span>
+          <span style="font-weight:600;">${r.name}</span>
+          <span class="mono" style="color:var(--muted); font-size:12px;">고유번호 ${formatBadge(r.badge)}</span>
+        </div>
+        <span class="mono" style="color:var(--gold); font-weight:700;">${r.count} 건</span>
+      </div>`;
+    });
+  }
+  html += `</div>`;
+  return html;
+}
+
+function renderRpReportList() {
+  const reports = DATA.rpReports || [];
+  if (reports.length === 0) {
+    return `<div style="padding:30px; text-align:center; color:var(--muted); font-size:13.5px;">등록된 RP 보고서가 없습니다.</div>`;
+  }
+  return reports.map(r => `
+    <div class="row-hover" style="padding:14px 20px; border-top:1px solid var(--line);">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+        <div>
+          <div style="font-size:14px; font-weight:600;">${r.rank || ''} ${r.name} <span class="mono" style="color:var(--muted); font-size:12px; font-weight:400;">· No.${formatBadge(r.badge)}</span></div>
+          <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:3px;">${formatDisplayDateTime(r.created_at)} · ${r.location || '-'} · 상대: ${r.target_faction || '-'} · 결과: ${r.result || '-'}</div>
+        </div>
+      </div>
+      <div style="font-size:13px; color:var(--text); margin-top:8px; white-space:pre-wrap; line-height:1.5;">${r.content || ''}</div>
+    </div>`).join("");
+}
+
 function renderRpReport() {
   return `
-    ${header("RP 보고서 작성", "작성된 보고서는 연동된 디스코드 채널로 즉시 발송됩니다.")}
-    <div class="panel" style="padding:24px; max-width:680px;">
+    ${header("RP 보고서 작성", "작성된 보고서는 연동된 디스코드 채널로 즉시 발송되며, 아래 목록과 작성 순위에도 기록됩니다.")}
+    ${renderRpRankingPanelHtml("RP 보고서 작성 순위 TOP 5", 5)}
+    <div class="panel" style="padding:24px; max-width:680px; margin-bottom:24px;">
       <form data-action="submit-rp-report">
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
           <div class="field">
@@ -463,7 +520,9 @@ function renderRpReport() {
 
         <button type="submit" class="btn-gold disp" style="width:100%; padding:13px 0; font-size:15px;">디스코드로 RP 보고서 전송</button>
       </form>
-    </div>`;
+    </div>
+    <div style="font-size:13px; color:var(--muted); margin-bottom:10px; font-weight:700;">최근 RP 보고서 (총 ${(DATA.rpReports || []).length}건)</div>
+    <div class="panel">${renderRpReportList()}</div>`;
 }
 
 /* ------------------------------ 법률 계산기 탭 ------------------------------ */
@@ -1303,10 +1362,8 @@ const SUBMIT_ACTIONS = {
     try {
       await apiCall("/rp-reports", "POST", { location, targetFaction, result, content });
       showToast("RP 보고서가 디스코드로 전송되었습니다!", "ok");
-      document.getElementById("rpLocation").value = "";
-      document.getElementById("rpTargetFaction").value = "";
-      document.getElementById("rpResult").value = "";
-      document.getElementById("rpContent").value = "";
+      // 새로 저장된 보고서를 목록/순위에 즉시 반영 (탭 전체가 다시 그려지며 입력폼도 초기화됨)
+      await fetchFactionData();
     } catch (e) { }
   }
 };
