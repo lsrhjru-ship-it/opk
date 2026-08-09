@@ -26,13 +26,9 @@ function getRankCategory(rank) {
 }
 
 // 특정 기능 권한 보유 여부 확인 함수
-// permKey: 'members' | 'attendance' | 'notices' | 'apps' | 'warn'
 function hasPermission(permKey) {
   if (!SESSION) return false;
-  // 팩션장(isOwner)이거나 위원장인 경우 모든 권한 허용
   if (SESSION.isOwner || SESSION.rank === "위원장") return true;
-
-  // 부여된 권한 목록 배열 확인
   const userPerms = SESSION.permissions || [];
   return userPerms.includes(permKey);
 }
@@ -51,7 +47,6 @@ function getAccessibleTabs() {
   if (hasPermission("apps")) baseTabs.push({ key: "apps", label: "가입 신청" });
   if (hasPermission("warn")) baseTabs.push({ key: "warn", label: "내부경고" });
 
-  // 팩션장/최고 임원 전용 관리 메뉴
   if (SESSION && (SESSION.isOwner || SESSION.rank === "위원장")) {
     baseTabs.push({ key: "accounts", label: "계정/권한 관리" });
     baseTabs.push({ key: "settings", label: "설정" });
@@ -122,8 +117,9 @@ let LAW_CAT = "전체";
 let LAW_SEARCH = "";
 let LAW_LAST_CLICKED = null;
 
-// 사이드 공지 검색 상태
+// 사이드 공지 검색 및 선택 상태
 let NOTICE_SEARCH = "";
+let SELECTED_NOTICE_ID = null;
 
 /* ------------------------------ API 연동 유틸 ------------------------------ */
 
@@ -151,9 +147,6 @@ async function fetchFactionData() {
     const res = await apiCall("/faction/data");
     DATA = res.faction;
 
-    // 본인 계정의 최신 계급/권한을 세션에 동기화 (관리자가 권한을 새로 부여해도
-    // 로그아웃 없이 즉시 반영되도록 하기 위함 — 그렇지 않으면 로그인 시점의
-    // 오래된 SESSION.permissions 값이 계속 사용되어 새로 받은 권한 탭이 안 보임)
     if (SESSION) {
       const me = DATA.accounts.find(a => String(a.id) === String(SESSION.id));
       if (me) {
@@ -161,7 +154,6 @@ async function fetchFactionData() {
         SESSION.permissions = me.permissions || [];
         localStorage.setItem("bureau_session", JSON.stringify(SESSION));
       } else {
-        // 본인 계정이 삭제된 경우
         return logout();
       }
     }
@@ -219,7 +211,6 @@ function render() {
     return;
   }
 
-  // 현재 탭이 권한 밖으로 밀려났다면 dash로 초기화
   const activeTabs = getAccessibleTabs();
   if (!activeTabs.find(t => t.key === TAB)) TAB = "dash";
 
@@ -612,7 +603,6 @@ function renderMemberRows(list) {
   if (list.length === 0) { html += `<div style="padding:28px; text-align:center; color:var(--muted); font-size:13.5px;">검색 결과가 없습니다.</div>`; return html; }
 
   list.forEach(a => {
-    // 계급에 따른 등급 분류 추출
     const category = getRankCategory(a.rank);
     let catBadgeColor = "var(--muted)";
     if (category === "임원직 간부") catBadgeColor = "var(--gold)";
@@ -640,17 +630,12 @@ function renderMemberRows(list) {
 
 /* ------------------------------ 근태 총시간 순위 계산 유틸 ------------------------------ */
 
-// 시간 문자열을 Date로 파싱
-// 서버는 이제 ISO 8601(new Date().toISOString())로 저장하지만, 과거에 저장된
-// "2026. 8. 8. 오후 3:45:00" 형식(toLocaleString('ko-KR')) 레코드도 함께 지원한다.
 function parseKoreanDateTime(str) {
   if (!str) return null;
 
-  // 1) ISO 8601 등 표준 형식 우선 시도 (서버가 현재 저장하는 형식)
   const iso = new Date(str);
   if (!isNaN(iso.getTime())) return iso;
 
-  // 2) 과거 한국어 로케일 형식 fallback
   const m = String(str).match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(오전|오후)\s*(\d{1,2}):(\d{2}):(\d{2})/);
   if (!m) return null;
   const [, y, mo, d, ampm, hRaw, mi, s] = m;
@@ -660,7 +645,6 @@ function parseKoreanDateTime(str) {
   return new Date(parseInt(y, 10), parseInt(mo, 10) - 1, parseInt(d, 10), h, parseInt(mi, 10), parseInt(s, 10));
 }
 
-// 화면에 사람이 읽기 좋은 한국어 형식으로 표시 (브라우저는 항상 풀 ICU를 갖고 있어 안전)
 function formatDisplayDateTime(str) {
   const d = parseKoreanDateTime(str);
   return d ? d.toLocaleString('ko-KR') : (str || "-");
@@ -672,7 +656,6 @@ function formatWorkMinutes(mins) {
   return `${h}시간 ${m}분`;
 }
 
-// 팩션원별 누적 근무시간 계산 (퇴근하지 않은 근무는 현재 시각까지 실시간 반영)
 function computeAttendanceRanking() {
   const totals = {};
   DATA.attendance.forEach(log => {
@@ -689,7 +672,6 @@ function computeAttendanceRanking() {
   return Object.values(totals).sort((a, b) => b.minutes - a.minutes);
 }
 
-// 근무 총시간 순위 패널 HTML (대시보드/근태 관리 탭에서 공용으로 사용)
 function renderRankingPanelHtml(title, limit) {
   const ranking = computeAttendanceRanking();
   const list = limit ? ranking.slice(0, limit) : ranking;
@@ -752,31 +734,7 @@ function renderAttendance() {
   return html;
 }
 
-/* ------------------------------ 사이드 공지 탭 (검색 기능 포함) ------------------------------ */
-
-function renderNoticeList(notices, canManage) {
-  if (notices.length === 0) {
-    const emptyMsg = NOTICE_SEARCH.trim() ? "검색 결과가 없습니다." : "등록된 공지가 없습니다.";
-    return `<div style="padding:36px; text-align:center; color:var(--muted); font-size:13.5px; border-top:1px solid var(--line);">${emptyMsg}</div>`;
-  }
-  let html = "";
-  notices.forEach((n, idx) => {
-    const displayId = (idx + 1).toString().padStart(4, '0');
-    html += `
-    <div class="notice-row row-hover">
-      <div class="mono notice-id">${displayId}</div>
-      <div class="notice-body">
-         <div class="notice-title">${n.title}</div>
-         <textarea class="notice-textarea" readonly id="notice_text_${n.id}">${n.content}</textarea>
-      </div>
-      <div class="notice-actions">
-         <button class="btn-ghost" data-action="copy-notice" data-id="${n.id}" style="padding:7px; font-size:12px;">복사</button>
-         ${canManage ? `<button class="btn-ghost danger" data-action="del-notice" data-id="${n.id}" style="padding:7px; font-size:12px;">삭제</button>` : ""}
-      </div>
-    </div>`;
-  });
-  return html;
-}
+/* ------------------------------ 사이드 공지 탭 (좌측 목록 확장 구조) ------------------------------ */
 
 function getFilteredNotices() {
   const query = NOTICE_SEARCH.trim().toLowerCase();
@@ -791,27 +749,60 @@ function renderNotices() {
   const canManage = hasPermission("notices");
   const filtered = getFilteredNotices();
 
+  if (filtered.length > 0 && !filtered.some(n => String(n.id) === String(SELECTED_NOTICE_ID))) {
+    SELECTED_NOTICE_ID = filtered[0].id;
+  }
+
+  const selectedNotice = filtered.find(n => String(n.id) === String(SELECTED_NOTICE_ID));
+
   const createFormHtml = canManage ? `
-    <div class="panel" style="padding:18px; margin-bottom:22px; display:flex; gap:12px; flex-direction:column;">
+    <div class="panel" style="padding:18px; margin-bottom:16px; display:flex; gap:12px; flex-direction:column;">
       <div class="field"><label>새 공지 제목 (예: 서부 ATM)</label><input id="snTitle" placeholder="제목 입력" style="width:100%; max-width:420px;"/></div>
-      <div class="field"><label>복사될 내용 (클립보드 양식)</label><textarea id="snContent" placeholder="/보안국 [ 젤리 보안국 ] 서부 ATM에서..." style="width:100%; min-height:85px;"></textarea></div>
+      <div class="field"><label>복사될 내용 (클립보드 양식)</label><textarea id="snContent" placeholder="/보안국 [ 젤리 보안국 ] 서부 ATM에서..." style="width:100%; min-height:80px;"></textarea></div>
       <button data-action="submit-notice" class="btn-gold" style="align-self:flex-start;">공지 추가</button>
     </div>` : "";
 
   return `
-    ${header("사이드 공지", `복사하여 바로 사용할 수 있는 사전 지정 양식 (전체 ${DATA.sideNotices.length}건${NOTICE_SEARCH.trim() ? ` · 검색결과 ${filtered.length}건` : ""})`)}
+    ${header("사이드 공지", `등록된 공지 목록을 선택하여 복사합니다. (총 ${DATA.sideNotices.length}건)`)}
     ${createFormHtml}
-    <div class="panel" style="display:flex; align-items:center; gap:8px; margin-bottom:14px; padding:6px 14px; max-width:320px;">
-      <span style="color:var(--muted);">⌕</span>
-      <input id="noticeSearch" data-action="search-notices" value="${NOTICE_SEARCH}" placeholder="제목 또는 내용 검색" style="background:transparent; border:none; padding:6px 0; width:100%; box-shadow:none;" />
-    </div>
-    <div class="panel">
-      <div style="display:flex; padding:12px 18px; border-bottom:1px solid var(--line); font-size:12px; color:var(--muted); font-weight:600; text-align:center;">
-         <div style="width:60px;">#</div>
-         <div style="flex:1;">사이드 공지 - 제목 / 클립보드(복사) 내용</div>
-         <div style="width:${canManage ? "70px" : "50px"};">작업</div>
+
+    <div style="display:flex; gap:16px; min-height:420px; align-items:stretch;">
+      <!-- [좌측] 등록된 공지 개수만큼 행이 자동으로 늘어나는 목록 선택 패널 -->
+      <div class="panel" style="width:260px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden;">
+        <div style="padding:10px 12px; border-bottom:1px solid var(--line);">
+          <input id="noticeSearch" data-action="search-notices" value="${NOTICE_SEARCH}" placeholder="🔍 공지 검색" style="background:transparent; border:none; color:var(--text); width:100%; font-size:13px; outline:none;" />
+        </div>
+        <div style="flex:1; overflow-y:auto; padding:6px; display:flex; flex-direction:column; gap:4px;">
+          ${filtered.length === 0 ? `<div style="padding:20px; text-align:center; color:var(--muted); font-size:12px;">등록된 공지가 없습니다.</div>` :
+          filtered.map((n, idx) => {
+            const isSelected = String(n.id) === String(SELECTED_NOTICE_ID);
+            return `
+              <button data-action="select-notice" data-id="${n.id}" 
+                      class="btn-ghost" 
+                      style="width:100%; justify-content:flex-start; text-align:left; padding:10px 12px; border-radius:var(--radius-sm); ${isSelected ? 'background:var(--gold); color:#000; font-weight:700;' : 'color:var(--text);'}">
+                <span class="mono" style="font-size:11px; opacity:0.7; margin-right:6px;">#${(idx + 1).toString().padStart(2, '0')}</span>
+                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;">${n.title}</span>
+              </button>`;
+          }).join("")}
+        </div>
       </div>
-      <div id="noticeList">${renderNoticeList(filtered, canManage)}</div>
+
+      <!-- [우측] 선택한 공지의 내용 보기 및 원클릭 복사 영역 -->
+      <div class="panel" style="flex:1; padding:20px; display:flex; flex-direction:column; justify-content:space-between;">
+        ${selectedNotice ? `
+          <div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; padding-bottom:10px; border-bottom:1px solid var(--line);">
+              <div style="font-size:18px; font-weight:700; color:var(--text);">${selectedNotice.title}</div>
+              ${canManage ? `<button class="btn-ghost danger" data-action="del-notice" data-id="${selectedNotice.id}" style="padding:6px 12px; font-size:12px;">삭제</button>` : ""}
+            </div>
+            <div class="field">
+              <label>복사용 내용</label>
+              <textarea id="notice_text_${selectedNotice.id}" readonly style="width:100%; min-height:220px; font-family:monospace; line-height:1.5; font-size:14px; background:var(--panel2);">${selectedNotice.content}</textarea>
+            </div>
+          </div>
+          <button class="btn-gold disp" data-action="copy-notice" data-id="${selectedNotice.id}" style="width:100%; padding:13px 0; font-size:15px; margin-top:16px;">클립보드에 복사</button>
+        ` : `<div style="margin:auto; color:var(--muted); font-size:14px;">좌측에서 공지를 선택하세요.</div>`}
+      </div>
     </div>`;
 }
 
@@ -1019,14 +1010,20 @@ const CLICK_ACTIONS = {
     } catch (e) { }
   },
 
+  "select-notice": (el) => {
+    SELECTED_NOTICE_ID = el.dataset.id;
+    refreshTab();
+  },
+
   "submit-notice": async () => {
     const title = document.getElementById("snTitle").value.trim();
     const content = document.getElementById("snContent").value.trim();
     if (!title || !content) { showToast("제목과 내용을 모두 입력하세요", "danger"); return; }
 
     try {
-      await apiCall("/notices", "POST", { title, content });
+      const res = await apiCall("/notices", "POST", { title, content });
       showToast("공지가 추가되었습니다");
+      if (res && res.id) SELECTED_NOTICE_ID = res.id;
       await fetchFactionData();
     } catch (e) { }
   },
@@ -1034,6 +1031,9 @@ const CLICK_ACTIONS = {
     try {
       await apiCall(`/notices/${el.dataset.id}`, "DELETE");
       showToast("공지가 삭제되었습니다", "danger");
+      if (String(SELECTED_NOTICE_ID) === String(el.dataset.id)) {
+        SELECTED_NOTICE_ID = null;
+      }
       await fetchFactionData();
     } catch (e) { }
   },
@@ -1245,12 +1245,11 @@ const CHANGE_ACTIONS = {
     try {
       await apiCall(`/members/${id}/rank`, "PATCH", { rank: newRank });
       showToast("계급이 변경되었습니다");
-      // 서버 재조회 없이 로컬 데이터만 갱신 (불필요한 네트워크 왕복 제거)
       const acc = DATA.accounts.find(a => String(a.id) === String(id));
       if (acc) acc.rank = newRank;
       refreshTab();
     } catch (e) {
-      if (prevRank) el.value = prevRank; // 실패 시 이전 값으로 복구
+      if (prevRank) el.value = prevRank;
     }
   },
   "toggle-permission": async (el) => {
@@ -1271,7 +1270,7 @@ const CHANGE_ACTIONS = {
         }
       }
     } catch (e) {
-      el.checked = !isGranted; // 실패 시 원래 상태로 복구
+      el.checked = !isGranted;
     }
   }
 };
@@ -1287,12 +1286,8 @@ const INPUT_ACTIONS = {
     refreshTab();
   },
   "search-notices": (el) => {
-    // 캐럿(커서) 위치를 보존하기 위해 전체 탭이 아닌 목록 부분만 갱신한다.
     NOTICE_SEARCH = el.value;
-    const canManage = hasPermission("notices");
-    const filtered = getFilteredNotices();
-    const listEl = document.getElementById("noticeList");
-    if (listEl) listEl.innerHTML = renderNoticeList(filtered, canManage);
+    refreshTab();
   }
 };
 
