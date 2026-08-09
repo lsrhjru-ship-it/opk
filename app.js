@@ -121,6 +121,7 @@ let LAW_SELECTED = new Set();
 let LAW_CAT = "전체";
 let LAW_SEARCH = "";
 let LAW_LAST_CLICKED = null;
+let LAW_PAID = "";
 
 /* ------------------------------ API 연동 유틸 ------------------------------ */
 
@@ -482,6 +483,23 @@ function formatMinutes(n) {
   return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
 }
 
+// 벌금 미납/초과지불(보석금)에 따른 구금시간 재계산
+// - 벌금이 부족하면(paid < fine) 부족분 5,000,000원마다 구금시간 1분 추가
+// - 벌금을 초과 지불하면(paid > fine, 보석금) 초과분 5,000,000원마다 구금시간 1분 차감 (최소 0분)
+const BAIL_UNIT = 5000000;
+function computeBailAdjustment(paid, fine, detention) {
+  if (paid === null || isNaN(paid) || paid < 0) return null;
+  const diff = paid - fine;
+  let extraMinutes = 0, reducedMinutes = 0;
+  if (diff < 0) {
+    extraMinutes = Math.ceil(Math.abs(diff) / BAIL_UNIT);
+  } else if (diff > 0) {
+    reducedMinutes = Math.floor(diff / BAIL_UNIT);
+  }
+  const finalDetention = Math.max(0, detention + extraMinutes - reducedMinutes);
+  return { diff, extraMinutes, reducedMinutes, finalDetention };
+}
+
 function renderLawCalc() {
   const categories = ["전체", "건물 알피", "차량 알피", "영장", "경범죄", "중범죄"];
 
@@ -508,6 +526,33 @@ function renderLawCalc() {
   });
 
   const lastItem = LAW_LAST_CLICKED || (filtered.length > 0 ? filtered[0] : null);
+
+  // 보석금 / 벌금 부족 구금시간 계산
+  const paidNum = LAW_PAID === "" ? null : Number(LAW_PAID);
+  const bail = (count > 0 && paidNum !== null) ? computeBailAdjustment(paidNum, totalFine, totalDetention) : null;
+
+  let bailResultHtml = "";
+  if (count === 0) {
+    bailResultHtml = `<div style="margin-top:12px; font-size:12.5px; color:var(--muted);">먼저 위에서 죄목을 선택하세요.</div>`;
+  } else if (paidNum === null) {
+    bailResultHtml = `<div style="margin-top:12px; font-size:12.5px; color:var(--muted);">보유 금액을 입력하면 최종 구금시간이 계산됩니다.</div>`;
+  } else if (bail) {
+    bailResultHtml = `
+      <div style="display:flex; gap:16px; margin-top:14px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:160px;">
+          <div style="font-size:11.5px; color:var(--muted); font-weight:600;">${bail.diff < 0 ? "부족한 벌금" : bail.diff > 0 ? "초과 지불(보석금)" : "차액"}</div>
+          <div class="disp mono" style="font-size:18px; font-weight:700; color:${bail.diff < 0 ? "var(--danger)" : "var(--gold)"}; margin-top:2px;">${formatWon(Math.abs(bail.diff))}</div>
+        </div>
+        <div style="flex:1; min-width:160px;">
+          <div style="font-size:11.5px; color:var(--muted); font-weight:600;">${bail.diff < 0 ? "추가 구금" : "차감 구금"}</div>
+          <div class="disp mono" style="font-size:18px; font-weight:700; color:${bail.diff < 0 ? "var(--danger)" : "var(--ok)"}; margin-top:2px;">${bail.diff < 0 ? "+" : "-"}${formatMinutes(bail.diff < 0 ? bail.extraMinutes : bail.reducedMinutes)}</div>
+        </div>
+        <div style="flex:1; min-width:160px;">
+          <div style="font-size:11.5px; color:var(--muted); font-weight:600;">최종 구금시간</div>
+          <div class="disp mono" style="font-size:18px; font-weight:700; color:var(--steel); margin-top:2px;">${formatMinutes(bail.finalDetention)}</div>
+        </div>
+      </div>`;
+  }
 
   return `
     ${header("법률 검색 및 계산기", "죄목을 선택하면 벌금과 구금시간이 자동으로 합산됩니다.")}
@@ -572,6 +617,20 @@ function renderLawCalc() {
     </div>
 
     ${excluded.length > 0 ? `<div style="font-size:12px; color:var(--danger); margin-bottom:16px; font-weight:600;">⚠ 수동 계산 필요 항목 포함: ${excluded.join(", ")}</div>` : ''}
+
+    <div class="panel" style="padding:18px 20px; margin-bottom:16px;">
+      <div style="font-size:13px; color:var(--muted); font-weight:700; margin-bottom:10px;">보석금 / 벌금 부족 구금시간 계산기</div>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:12px; line-height:1.6;">
+        벌금 ${formatWon(BAIL_UNIT)}이 부족할 때마다 구금시간 1분이 추가되고, ${formatWon(BAIL_UNIT)}을 초과 지불(보석금)할 때마다 구금시간이 1분 차감됩니다.
+      </div>
+      <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+        <div class="field">
+          <label>보유 금액 (원)</label>
+          <input id="lawPaidInput" data-action="law-paid" type="number" min="0" step="1" value="${LAW_PAID}" placeholder="예) 100000000" style="width:220px;" />
+        </div>
+      </div>
+      ${bailResultHtml}
+    </div>
 
     ${lastItem ? `
     <div class="panel" style="padding:18px 20px; line-height:1.6; font-size:13.5px;">
@@ -1263,6 +1322,10 @@ const INPUT_ACTIONS = {
   },
   "law-search": (el) => {
     LAW_SEARCH = el.value;
+    refreshTab();
+  },
+  "law-paid": (el) => {
+    LAW_PAID = el.value;
     refreshTab();
   }
 };
