@@ -1100,84 +1100,25 @@ function renderSettings() {
 }
 
 /* ============================================================================
-   로고 기반 자동 UI 컬러 테마
+   밝은 블루 톤 UI 컬러 테마
    ============================================================================ */
-
-const THEME_CACHE_KEY = "bureau_theme_hsl";
-
-// RGB -> HSL 변환
-function rgbToHsl(r, g, b) {
-  r /= 255; g /= 255; b /= 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  let h, s, l = (max + min) / 2;
-  if (max === min) { h = s = 0; }
-  else {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    switch (max) {
-      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-      case g: h = (b - r) / d + 2; break;
-      case b: h = (r - g) / d + 4; break;
-    }
-    h /= 6;
-  }
-  return [h * 360, s * 100, l * 100];
-}
 
 function hslCss(h, s, l) { return `hsl(${h.toFixed(1)}, ${Math.max(0, s).toFixed(1)}%, ${Math.max(0, Math.min(100, l)).toFixed(1)}%)`; }
 
-// 로고 이미지에서 가장 특징적인(채도 높고 극단적이지 않은 밝기의) 색을 뽑아낸다.
-// 캔버스에 축소해서 그린 뒤, 비슷한 색끼리 버킷으로 묶어 가장 많이 등장한 색을 대표색으로 채택.
-function extractDominantColor(img) {
-  const size = 48;
-  const canvas = document.createElement("canvas");
-  canvas.width = size; canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(img, 0, 0, size, size);
+// 로고 색상을 굳이 분석하지 않고, 블루 계열 안에서 서로 다른 톤(hue)을 조합해
+// 밝고 파란 느낌의 UI 팔레트를 바로 적용한다.
+function applyBlueTheme() {
+  const accentHue = 213;  // 포인트 컬러(--gold 역할) — 선명한 블루
+  const steelHue = 196;   // 보조 컬러(--steel) — 조금 더 시안에 가까운 블루
 
-  let data;
-  try {
-    data = ctx.getImageData(0, 0, size, size).data;
-  } catch (e) {
-    // 로고가 다른 도메인에서 CORS 없이 서빙되어 캔버스 픽셀을 읽을 수 없는 경우
-    return null;
-  }
-
-  const buckets = {};
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] < 200) continue; // 투명 픽셀 제외
-    const [h, s, l] = rgbToHsl(data[i], data[i + 1], data[i + 2]);
-    // 그림자/하이라이트/거의 무채색인 픽셀은 대표색 후보에서 제외
-    if (l < 12 || l > 88 || s < 12) continue;
-    const key = `${Math.round(h / 12)}_${Math.round(s / 20)}_${Math.round(l / 20)}`;
-    if (!buckets[key]) buckets[key] = { count: 0, h: 0, s: 0, l: 0 };
-    buckets[key].count++;
-    buckets[key].h += h; buckets[key].s += s; buckets[key].l += l;
-  }
-
-  let best = null;
-  Object.values(buckets).forEach(b => { if (!best || b.count > best.count) best = b; });
-  if (!best) return null;
-
-  return { h: best.h / best.count, s: best.s / best.count, l: best.l / best.count };
-}
-
-// 대표색(hue 중심)을 기준으로 전체 UI 팔레트를 구성해 CSS 변수로 반영한다.
-// (전체적으로 밝은 톤을 쓰도록 배경/패널/텍스트의 명도 기준을 올려서 구성)
-function applyPaletteFromDominant(dom) {
-  const h = dom.h;
-  const s = Math.min(85, Math.max(45, dom.s));
-  const goldL = Math.min(74, Math.max(52, dom.l));
-
-  const gold = hslCss(h, s, goldL);
-  const bg = hslCss(h, Math.min(22, s * 0.22), 15);
-  const panel = hslCss(h, Math.min(20, s * 0.2), 19.5);
-  const panel2 = hslCss(h, Math.min(18, s * 0.18), 23.5);
-  const line = hslCss(h, Math.min(18, s * 0.2), 32);
-  const muted = hslCss(h, Math.min(10, s * 0.12), 68);
-  const text = hslCss(h, Math.min(6, s * 0.06), 97);
-  const steelHue = (h + 190) % 360; // 포인트색과 대비되는 보조색(보색 근처)
-  const steel = hslCss(steelHue, Math.min(55, s), 68);
+  const gold = hslCss(accentHue, 88, 62);
+  const bg = hslCss(accentHue, 30, 16);
+  const panel = hslCss(accentHue, 24, 21);
+  const panel2 = hslCss(accentHue, 22, 25.5);
+  const line = hslCss(accentHue, 24, 34);
+  const muted = hslCss(accentHue, 14, 70);
+  const text = hslCss(accentHue, 10, 97);
+  const steel = hslCss(steelHue, 75, 66);
 
   const root = document.documentElement.style;
   root.setProperty("--gold", gold);
@@ -1188,32 +1129,6 @@ function applyPaletteFromDominant(dom) {
   root.setProperty("--muted", muted);
   root.setProperty("--text", text);
   root.setProperty("--steel", steel);
-
-  localStorage.setItem(THEME_CACHE_KEY, JSON.stringify({ h: dom.h, s: dom.s, l: dom.l }));
-}
-
-// 페이지 로드 즉시(이미지 분석을 기다리지 않고) 이전에 계산해둔 색상을 먼저 적용해
-// 매번 기본 테마 → 로고색으로 바뀌는 깜빡임을 없앤다.
-function applyCachedThemeIfAny() {
-  try {
-    const cached = JSON.parse(localStorage.getItem(THEME_CACHE_KEY) || "null");
-    if (cached) applyPaletteFromDominant(cached);
-  } catch (e) { }
-}
-
-function initLogoTheme() {
-  applyCachedThemeIfAny();
-
-  const img = new Image();
-  img.crossOrigin = "anonymous";
-  img.onload = () => {
-    const dom = extractDominantColor(img);
-    if (dom) applyPaletteFromDominant(dom);
-    // 실패 시(예: CORS 차단) 캐시된 값 또는 CSS 기본값이 그대로 유지됨
-  };
-  img.onerror = () => { };
-  // sealSvg()에서 쓰는 로고와 동일한 이미지를 사용
-  img.src = LOGO_URL;
 }
 
 /* ============================================================================
@@ -1576,7 +1491,7 @@ function initEventDelegation() {
 /* ------------------------------ 초기화 ------------------------------ */
 
 (async function init() {
-  initLogoTheme();
+  applyBlueTheme();
   initEventDelegation();
   if (TOKEN && SESSION) {
     await fetchFactionData();
