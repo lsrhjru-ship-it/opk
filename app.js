@@ -191,7 +191,7 @@ function genFactionCode() {
 const LOGO_URL = "https://cdn.discordapp.com/attachments/1531501210610434168/1536237644843982888/8D4AAAAASUVORK5CYII.png?ex=6a7aac4c&is=6a795acc&hm=68f874315d648df6b51ad41a2ee748aeddb8f6c7d930768b3d17a21a3180d580";
 
 function sealSvg(size) {
-  return `<img src="${LOGO_URL}" alt="보안국 로고" class="bureau-logo-img" style="width:${size}px; height:${size}px;" />`;
+  return `<img src="${LOGO_URL}" alt="보안국 로고" class="bureau-logo-img" crossorigin="anonymous" style="width:${size}px; height:${size}px;" />`;
 }
 
 function logout() {
