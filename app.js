@@ -1112,6 +1112,8 @@ function applyBlueTheme() {
   const steelHue = 196;   // 보조 컬러(--steel) — 조금 더 시안에 가까운 블루
 
   const gold = hslCss(accentHue, 88, 62);
+  const gold2 = hslCss(accentHue, 88, 50);              // hover 시 좀 더 진한 블루
+  const goldBg = `hsla(${accentHue}, 88%, 62%, 0.16)`;  // 어두운 패널 위에서도 또렷하게 보이는 포인트 틴트
   const bg = hslCss(accentHue, 30, 16);
   const panel = hslCss(accentHue, 24, 21);
   const panel2 = hslCss(accentHue, 22, 25.5);
@@ -1122,6 +1124,8 @@ function applyBlueTheme() {
 
   const root = document.documentElement.style;
   root.setProperty("--gold", gold);
+  root.setProperty("--gold2", gold2);
+  root.setProperty("--gold-bg", goldBg);
   root.setProperty("--bg", bg);
   root.setProperty("--panel", panel);
   root.setProperty("--panel2", panel2);
