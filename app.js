@@ -157,16 +157,21 @@ async function fetchFactionData() {
     const newData = res.faction;
     const isFirstLoad = DATA === null; // 아직 셸(화면 껍데기)이 그려지기 전인지 여부
 
-    // 본인 계정의 최신 계급/권한을 세션에 동기화
+    // 본인 계정의 최신 계급/권한을 세션에 동기화 (관리자가 권한을 새로 부여해도
+    // 로그아웃 없이 즉시 반영되도록 하기 위함 — 그렇지 않으면 로그인 시점의
+    // 오래된 SESSION.permissions 값이 계속 사용되어 새로 받은 권한 탭이 안 보임)
     let newSessionBits = null;
     if (SESSION) {
       const me = newData.accounts.find(a => String(a.id) === String(SESSION.id));
       if (!me) {
+        // 본인 계정이 삭제된 경우
         return logout();
       }
       newSessionBits = { rank: me.rank, permissions: me.permissions || [], isOwner: !!me.isOwner };
     }
 
+    // 실제로 내용이 바뀌었는지 확인 (폴링으로 매번 화면을 통째로 다시 그리면
+    // 데이터가 그대로여도 스크롤/펼침 상태가 흔들릴 수 있어, 변경이 있을 때만 재렌더링한다)
     const snapshot = JSON.stringify({ data: newData, session: newSessionBits });
     const changed = snapshot !== LAST_SNAPSHOT;
     LAST_SNAPSHOT = snapshot;
@@ -180,6 +185,8 @@ async function fetchFactionData() {
     }
 
     if (changed) {
+      // 최초 로드(로그인 직후)만 화면 껍데기를 통째로 그리고,
+      // 그 이후 폴링 갱신은 필요한 부분만 조용히 바꿔치기한다.
       if (isFirstLoad) render(); else silentSync();
     }
   } catch (e) {
@@ -189,6 +196,8 @@ async function fetchFactionData() {
 
 /* ------------------------------ 자동 새로고침(폴링) ------------------------------ */
 
+// 사용자가 입력 중인 요소(검색창, 폼 필드 등)에 포커스가 있으면
+// 폴링으로 인한 전체 재렌더링이 타이핑을 방해하지 않도록 건너뛴다.
 function isUserTyping() {
   const el = document.activeElement;
   if (!el) return false;
@@ -223,18 +232,18 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function showToast(msg, kind) {
-  let el = document.getElementById("toast");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "toast";
-    el.style.cssText = "position:fixed; bottom:20px; left:50%; transform:translateX(-50%); padding:12px 20px; background:var(--panel2); color:var(--text); border-radius:var(--radius-sm); box-shadow:var(--shadow-lg); z-index:9999; display:none; font-size:14px; font-weight:600; border:1px solid var(--line);";
-    document.body.appendChild(el);
-  }
+  const el = document.getElementById("toast");
+  if (!el) return;
   el.textContent = (kind === "danger" ? "⚠ " : "✓ ") + msg;
-  el.style.borderLeft = kind === "danger" ? "4px solid var(--danger)" : "4px solid var(--ok)";
-  el.style.display = "block";
+  el.className = kind === "danger" ? "danger" : "";
+  el.style.display = "flex";
   clearTimeout(window._toastT);
   window._toastT = setTimeout(() => { el.style.display = "none"; }, 2600);
+}
+
+function genFactionCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
 const LOGO_URL = "https://cdn.discordapp.com/attachments/1531501210610434168/1536237644843982888/8D4AAAAASUVORK5CYII.png?ex=6a7aac4c&is=6a795acc&hm=68f874315d648df6b51ad41a2ee748aeddb8f6c7d930768b3d17a21a3180d580";
@@ -253,12 +262,6 @@ function logout() {
   localStorage.removeItem("bureau_session");
   VIEW = "gate";
   render();
-}
-
-function formatDisplayDateTime(isoStr) {
-  if (!isoStr) return "";
-  const d = new Date(isoStr);
-  return d.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 /* ------------------------------ 최상위 렌더 ------------------------------ */
@@ -283,6 +286,7 @@ function render() {
   const activeTabs = getAccessibleTabs();
   if (!activeTabs.find(t => t.key === TAB)) TAB = "dash";
 
+  // 재렌더링으로 스크롤 위치가 맨 위로 튀지 않도록, 기존 스크롤 위치를 기억했다가 복원한다.
   const prevScroll = document.getElementById("mainScroll");
   const scrollTop = prevScroll ? prevScroll.scrollTop : 0;
 
@@ -293,12 +297,16 @@ function render() {
 }
 
 function refreshTab() {
-  const tabEl = document.getElementById("tabContent");
-  if(tabEl) tabEl.innerHTML = renderTab();
+  document.getElementById("tabContent").innerHTML = renderTab();
 }
 
+// 폴링(백그라운드 자동 새로고침) 전용: 화면 전체(app.innerHTML)를 새로 만들지 않고
+// 바뀔 수 있는 부분(탭 목록 / 이름·계급·출퇴근 버튼 / 본문)만 자리 그대로 갱신한다.
+// render()처럼 껍데기를 통째로 교체하면 진입 애니메이션이 다시 재생되고
+// 열려있던 폼 등이 리셋돼서 "새로고침 티"가 나기 때문에, 이 경로에서는 그걸 피한다.
 function silentSync() {
   const app = document.getElementById("app");
+  // 아직 로그인 셸이 그려진 적이 없으면(최초 로드 등) 통째로 그리는 수밖에 없다.
   if (!app || !document.getElementById("tabContent") || !SESSION || !TOKEN || !DATA) {
     render();
     return;
@@ -426,7 +434,7 @@ function renderNavTabs(tabs) {
 }
 
 function renderSessionBox() {
-  const isWorking = DATA.attendance && DATA.attendance.find(a => a.user_id === SESSION.id && !a.clock_out_time);
+  const isWorking = DATA.attendance.find(a => a.user_id === SESSION.id && !a.clock_out_time);
   const workBtnHtml = isWorking
     ? `<button data-action="toggle-work" class="btn-ghost danger" style="margin-top:10px; width:100%; padding:9px 0; font-size:12.5px; font-weight:600;">퇴근하기 (근무 중)</button>`
     : `<button data-action="toggle-work" class="btn-ghost ok" style="margin-top:10px; width:100%; padding:9px 0; font-size:12.5px; font-weight:600;">출근하기</button>`;
@@ -497,9 +505,9 @@ function statCard(label, value, color) {
 
 function renderDash() {
   const activeCount = DATA.accounts.filter(a => a.status === "재직").length;
-  const pendingApps = (DATA.applications || []).filter(a => a.status === "요청됨").length;
-  const warnCount = (DATA.warnings || []).length;
-  const recent = [...(DATA.warnings || [])].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
+  const pendingApps = DATA.applications.filter(a => a.status === "요청됨").length;
+  const warnCount = DATA.warnings.length;
+  const recent = [...DATA.warnings].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
   return `
     ${header("대시보드", `${SESSION.rank} ${SESSION.name} 님, 오늘도 수고 많으십니다.`)}
     <div class="panel" style="display:flex; align-items:center; justify-content:space-between; padding:14px 20px; margin-bottom:18px;">
@@ -510,7 +518,7 @@ function renderDash() {
       ${statCard("재직 팩션원", activeCount)}
       ${statCard("대기 중 가입신청", pendingApps, "var(--steel)")}
       ${statCard("누적 내부경고", warnCount, "var(--danger)")}
-      ${statCard("등록 공지", (DATA.sideNotices || []).length, "var(--ok)")}
+      ${statCard("등록 공지", DATA.sideNotices.length, "var(--ok)")}
     </div>
     ${renderRankingPanelHtml("근무 총시간 순위 TOP 5", 5)}
     ${renderRpRankingPanelHtml("RP 보고서 작성 순위 TOP 5", 5)}
@@ -558,14 +566,6 @@ function renderRpRankingPanelHtml(title, limit) {
   }
   html += `</div>`;
   return html;
-}
-
-// 임시: 근무 랭킹 렌더링 헬퍼
-function renderRankingPanelHtml(title, limit) {
-  return `<div class="panel" style="margin-bottom:18px;">
-    <div style="padding:14px 20px; border-bottom:1px solid var(--line); font-size:13px; color:var(--muted); font-weight:700;">${title}</div>
-    <div style="padding:24px; text-align:center; color:var(--muted); font-size:13.5px;">근태 데이터 집계 중...</div>
-  </div>`;
 }
 
 function renderRpReportList() {
@@ -625,7 +625,9 @@ function renderRpReport() {
     <div class="panel">${renderRpReportList()}</div>`;
 }
 
-function getLawKey(item) { return `${item.category}||${item.name}`; }
+function getLawKey(item) {
+  return `${item.category}||${item.name}`;
+}
 
 function parseFine(text) {
   if (!text || text.includes('/')) return null;
@@ -656,8 +658,10 @@ function formatMinutes(n) {
 
 function renderLawCalc() {
   const categories = ["전체", "건물 알피", "차량 알피", "영장", "경범죄", "중범죄"];
+
   return `
     ${header("법률 검색 및 계산기", "죄목을 선택하면 벌금과 구금시간이 자동으로 합산됩니다.")}
+    
     <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
       ${categories.map(c => `
         <button class="btn-ghost ${LAW_CAT === c ? 'active' : ''}" 
@@ -667,12 +671,14 @@ function renderLawCalc() {
         </button>
       `).join("")}
     </div>
+
     <div class="panel" style="display:flex; align-items:center; gap:12px; padding:10px 16px; margin-bottom:16px;">
       <span style="color:var(--muted); font-size:15px;">🔍</span>
       <input id="lawSearchInput" data-action="law-search" value="${LAW_SEARCH}" placeholder="검색어 입력 (죄목, 키워드, 위치)" style="background:transparent; border:none; color:var(--text); width:100%; font-size:14px; outline:none;" />
       <button data-action="law-select-all" class="btn-gold" style="padding:6px 12px; font-size:12px; white-space:nowrap;">전체 선택</button>
       <button data-action="law-clear-all" class="btn-ghost" style="padding:6px 12px; font-size:12px; white-space:nowrap;">선택 해제</button>
     </div>
+
     <div id="lawResults">${renderLawResults()}</div>
   `;
 }
@@ -715,7 +721,7 @@ function renderLawResults() {
 
   return `
     <div class="panel" style="margin-bottom:16px; max-height:420px; overflow-y:auto;">
-      <div class="table-head" style="grid-template-columns: 50px 100px 1.5fr 1fr 1fr 2fr; position:sticky; top:0; background:var(--panel); z-index:2;">
+      <div class="table-head" style="grid-template-columns: 50px 100px 1.5fr 1fr 1fr 2fr; sticky; top:0; background:var(--panel); z-index:2;">
         <span style="text-align:center;">선택</span>
         <span style="text-align:center;">구분</span>
         <span>죄목 / 위치</span>
@@ -764,7 +770,9 @@ function renderLawResults() {
         <div class="disp mono" style="font-size:24px; font-weight:700; color:var(--gold); margin-top:4px;">${count === 0 ? '-' : formatWon(totalFine + bailCost)}</div>
       </div>
     </div>
+
     ${excluded.length > 0 ? `<div style="font-size:12px; color:var(--danger); margin-bottom:16px; font-weight:600;">⚠ 수동 계산 필요 항목 포함: ${excluded.join(", ")}</div>` : ''}
+
     ${lastItem ? `
     <div class="panel" style="padding:18px 20px; line-height:1.6; font-size:13.5px;">
       <div style="font-weight:700; color:var(--gold); margin-bottom:6px;">📌 ${lastItem.name} (${lastItem.category}) 진행 절차</div>
@@ -778,9 +786,12 @@ function renderLawResults() {
 function refreshLawResults() {
   const el = document.getElementById("lawResults");
   if (!el) return;
+
   const listPanel = el.querySelector(".panel");
   const prevScrollTop = listPanel ? listPanel.scrollTop : 0;
+
   el.innerHTML = renderLawResults();
+
   const newListPanel = el.querySelector(".panel");
   if (newListPanel) newListPanel.scrollTop = prevScrollTop;
 }
@@ -825,80 +836,621 @@ function refreshMemberList() {
 function renderMemberRows(list) {
   const cols = "1.8fr 0.7fr 0.8fr 0.8fr 1fr 0.8fr";
   let html = `<div class="table-head" style="grid-template-columns:${cols};"><span>이름</span><span>고유번호</span><span>계급/분류</span><span>상태</span><span>가입일</span><span></span></div>`;
-  if (list.length === 0) {
-    html += `<div style="padding:28px; text-align:center; color:var(--muted); font-size:13.5px;">검색된 팩션원이 없습니다.</div>`;
-    return html;
-  }
-  
-  list.forEach(a => {
-    const isEdit = EDIT_BADGE_ID === String(a.id);
-    const badgeHtml = isEdit
-      ? `<input id="badgeInput_${a.id}" value="${formatBadge(a.badge)}" style="width:60px; padding:4px 8px; font-size:12px;" />
-         <button data-action="save-badge" data-id="${a.id}" class="btn-ghost" style="padding:4px 8px; font-size:11px;">저장</button>`
-      : `<span class="mono" style="font-weight:600; cursor:pointer;" data-action="edit-badge" data-id="${a.id}">${formatBadge(a.badge)}</span>`;
+  if (list.length === 0) { html += `<div style="padding:28px; text-align:center; color:var(--muted); font-size:13.5px;">검색 결과가 없습니다.</div>`; return html; }
 
-    html += `
-      <div class="table-row row-hover" style="grid-template-columns:${cols};">
-        <span style="font-weight:600; color:var(--text);">${a.name}</span>
-        <div style="display:flex; align-items:center; gap:6px;">${badgeHtml}</div>
-        <div>
-          <select data-action="change-rank" data-id="${a.id}" style="padding:4px 8px; font-size:12px; border-radius:var(--radius-sm); border:1px solid var(--line); background:var(--panel2); color:var(--text);">
-            ${RANKS.map(r => `<option value="${r}" ${a.rank === r ? 'selected' : ''}>${r}</option>`).join("")}
-          </select>
-          <div class="mono" style="font-size:10px; color:var(--muted); margin-top:4px;">${getRankCategory(a.rank)}</div>
-        </div>
-        <span><span class="badge ${a.status === '재직' ? 'ok' : ''}">${a.status}</span></span>
-        <span class="mono" style="font-size:12px; color:var(--muted);">${a.joined_at ? a.joined_at.split("T")[0] : '-'}</span>
-        <div style="display:flex; gap:6px; justify-content:flex-end;">
-          <button data-action="toggle-status" data-id="${a.id}" class="btn-ghost" style="padding:6px 10px; font-size:11.5px;">${a.status === '재직' ? '해임' : '복직'}</button>
-        </div>
-      </div>`;
+  list.forEach(a => {
+    const category = getRankCategory(a.rank);
+    let catBadgeColor = "var(--muted)";
+    if (category === "고위직") catBadgeColor = "var(--gold)";
+    else if (category === "간부직") catBadgeColor = "#3498db";
+
+    html += `<div class="table-row row-hover" style="grid-template-columns:${cols}; align-items:center;" data-id="${a.id}">
+      <span style="display:flex; align-items:center; gap:6px; font-weight:600;">
+        ${a.name}
+        <span style="font-size:10px; font-weight:700; color:${catBadgeColor}; border:1px solid ${catBadgeColor}; border-radius:4px; padding:1px 5px; line-height:1.5; white-space:nowrap;">${category}</span>
+      </span>
+      <span class="mono" style="color:var(--gold); font-weight:600;">${a.id === EDIT_BADGE_ID
+        ? `<span style="display:flex; align-items:center; gap:4px;">
+               <input id="badgeInput_${a.id}" class="mono" value="${a.badge != null ? a.badge : ""}" style="width:64px; padding:3px 6px; font-size:12px;" onkeydown="if(event.key==='Enter'){this.nextElementSibling.click();}else if(event.key==='Escape'){this.nextElementSibling.nextElementSibling.click();}" />
+               <button data-action="save-badge" data-id="${a.id}" class="btn-ghost" style="padding:2px 6px; font-size:11px;">저장</button>
+               <button data-action="cancel-badge-edit" class="btn-ghost" style="padding:2px 6px; font-size:11px;">✕</button>
+             </span>`
+        : `<span data-action="edit-badge" data-id="${a.id}" style="cursor:pointer; border-bottom:1px dashed var(--gold);" title="클릭해서 고유번호 수정">${formatBadge(a.badge)}</span>`
+      }</span>
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <select data-action="change-rank" data-id="${a.id}" style="padding:4px 6px; font-size:12px; width:100%;">
+          ${RANKS.map(r => `<option value="${r}" ${r === a.rank ? "selected" : ""}>${r}</option>`).join("")}
+        </select>
+      </div>
+      <span class="badge ${a.status === "재직" ? "ok" : "danger"}">${a.status}</span>
+      <span class="mono" style="color:var(--muted); font-size:12px;">${a.join_date || a.joinDate || "-"}</span>
+      <button class="btn-ghost" data-action="toggle-status" data-id="${a.id}" style="padding:5px 12px; font-size:12px; justify-self:start;">${a.status === "재직" ? "해임 처리" : "복직 처리"}</button>
+    </div>`;
   });
   return html;
 }
 
-function renderAttendance() { return `<div style="padding:40px; text-align:center; color:var(--muted);">근태 관리 기능은 구현 예정입니다.</div>`; }
-function renderNotices() { return `<div style="padding:40px; text-align:center; color:var(--muted);">사이드 공지 기능은 구현 예정입니다.</div>`; }
-function renderApps() { return `<div style="padding:40px; text-align:center; color:var(--muted);">가입 신청 기능은 구현 예정입니다.</div>`; }
-function renderWarn() { return `<div style="padding:40px; text-align:center; color:var(--muted);">내부경고 기능은 구현 예정입니다.</div>`; }
-function renderAccounts() { return `<div style="padding:40px; text-align:center; color:var(--muted);">계정/권한 관리 기능은 구현 예정입니다.</div>`; }
-function renderSettings() { return `<div style="padding:40px; text-align:center; color:var(--muted);">설정 기능은 구현 예정입니다.</div>`; }
+function parseKoreanDateTime(str) {
+  if (!str) return null;
 
-/* ------------------------------ 클릭 및 폼 이벤트 로직 (끊어진 부분 포함) ------------------------------ */
+  const iso = new Date(str);
+  if (!isNaN(iso.getTime())) return iso;
+
+  const m = String(str).match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(오전|오후)\s*(\d{1,2}):(\d{2}):(\d{2})/);
+  if (!m) return null;
+  const [, y, mo, d, ampm, hRaw, mi, s] = m;
+  let h = parseInt(hRaw, 10);
+  if (ampm === "오후" && h !== 12) h += 12;
+  if (ampm === "오전" && h === 12) h = 0;
+  return new Date(parseInt(y, 10), parseInt(mo, 10) - 1, parseInt(d, 10), h, parseInt(mi, 10), parseInt(s, 10));
+}
+
+function formatDisplayDateTime(str) {
+  const d = parseKoreanDateTime(str);
+  return d ? d.toLocaleString('ko-KR') : (str || "-");
+}
+
+function formatWorkMinutes(mins) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${h}시간 ${m}분`;
+}
+
+function computeAttendanceRanking() {
+  const totals = {};
+  DATA.attendance.forEach(log => {
+    const inDate = parseKoreanDateTime(log.clock_in_time);
+    if (!inDate) return;
+    const outDate = log.clock_out_time ? parseKoreanDateTime(log.clock_out_time) : new Date();
+    if (!outDate) return;
+
+    const minutes = Math.max(0, Math.round((outDate - inDate) / 60000));
+    const key = log.user_id || `${log.name}_${log.badge}`;
+    if (!totals[key]) totals[key] = { name: log.name, badge: log.badge, minutes: 0 };
+    totals[key].minutes += minutes;
+  });
+  return Object.values(totals).sort((a, b) => b.minutes - a.minutes);
+}
+
+function renderRankingPanelHtml(title, limit) {
+  const ranking = computeAttendanceRanking();
+  const list = limit ? ranking.slice(0, limit) : ranking;
+
+  let html = `<div class="panel" style="margin-bottom:18px;">
+    <div style="padding:14px 20px; border-bottom:1px solid var(--line); font-size:13px; color:var(--muted); font-weight:700;">${title}</div>`;
+
+  if (list.length === 0) {
+    html += `<div style="padding:24px; text-align:center; color:var(--muted); font-size:13.5px;">근무 기록이 없습니다.</div>`;
+  } else {
+    list.forEach((r, idx) => {
+      const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : String(idx + 1);
+      html += `<div class="row-hover" style="display:flex; justify-content:space-between; align-items:center; padding:10px 20px; border-top:1px solid var(--line);">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="mono" style="width:22px; text-align:center; font-weight:700; color:${idx < 3 ? "var(--gold)" : "var(--muted)"};">${medal}</span>
+          <span style="font-weight:600;">${r.name}</span>
+          <span class="mono" style="color:var(--muted); font-size:12px;">고유번호 ${formatBadge(r.badge)}</span>
+        </div>
+        <span class="mono" style="color:var(--gold); font-weight:700;">${formatWorkMinutes(r.minutes)}</span>
+      </div>`;
+    });
+  }
+  html += `</div>`;
+  return html;
+}
+
+function findMemberLatestLog(acc) {
+  const memberLogs = DATA.attendance.filter(log => {
+    if (log.user_id != null) return String(log.user_id) === String(acc.id);
+    return log.name === acc.name && String(log.badge) === String(acc.badge);
+  });
+  if (memberLogs.length === 0) return { log: null, isWorking: false };
+
+  const workingLog = memberLogs.find(l => !l.clock_out_time);
+  if (workingLog) return { log: workingLog, isWorking: true };
+
+  const sorted = [...memberLogs].sort((a, b) => {
+    const da = parseKoreanDateTime(a.clock_in_time);
+    const db = parseKoreanDateTime(b.clock_in_time);
+    return (db ? db.getTime() : 0) - (da ? da.getTime() : 0);
+  });
+  return { log: sorted[0], isWorking: false };
+}
+
+function renderAttendance() {
+  const cols = "1.2fr 1fr 0.8fr 1.5fr 1.5fr 0.8fr";
+
+  let html = `
+    ${header("근태 관리", "전체 팩션원의 현재 근무 상태를 확인합니다.")}
+    ${renderRankingPanelHtml("근무 총시간 순위 (근무 중인 경우 현재 시각까지 반영)")}`;
+
+  html += `
+    <div class="panel">
+      <div class="table-head" style="grid-template-columns:${cols};">
+        <span>이름</span><span>계급</span><span>고유번호</span><span>출근 시간</span><span>퇴근 시간</span><span>상태</span>
+      </div>`;
+
+  if (DATA.accounts.length === 0) {
+    html += `<div style="padding:28px; text-align:center; color:var(--muted); font-size:13.5px;">등록된 팩션원이 없습니다.</div>`;
+  } else {
+    const rows = DATA.accounts.map(acc => {
+      const { log, isWorking } = findMemberLatestLog(acc);
+      return { acc, log, isWorking };
+    }).sort((a, b) => {
+      if (a.isWorking !== b.isWorking) return a.isWorking ? -1 : 1;
+      return a.acc.name.localeCompare(b.acc.name, 'ko');
+    });
+
+    rows.forEach(({ acc, log, isWorking }) => {
+      html += `<div class="table-row row-hover" style="grid-template-columns:${cols};">
+        <span style="font-weight:600;">${acc.name}</span>
+        <span style="color:var(--gold); font-size:12.5px; font-weight:600;">${acc.rank}</span>
+        <span class="mono" style="color:var(--gold); font-weight:600;">${formatBadge(acc.badge)}</span>
+        <span class="mono" style="font-size:12.5px; color:var(--muted);">${log ? formatDisplayDateTime(log.clock_in_time) : '-'}</span>
+        <span class="mono" style="font-size:12.5px; color:var(--muted);">${log && log.clock_out_time ? formatDisplayDateTime(log.clock_out_time) : '-'}</span>
+        <span class="badge ${isWorking ? 'ok' : 'steel'}">${isWorking ? '근무 중' : '퇴근'}</span>
+      </div>`;
+    });
+  }
+  html += `</div>`;
+  return html;
+}
+
+function renderNoticeList(notices, canManage) {
+  if (notices.length === 0) {
+    const emptyMsg = NOTICE_SEARCH.trim() ? "검색 결과가 없습니다." : "등록된 공지가 없습니다.";
+    return `<div style="padding:36px; text-align:center; color:var(--muted); font-size:13.5px; border-top:1px solid var(--line);">${emptyMsg}</div>`;
+  }
+  let html = "";
+  notices.forEach((n, idx) => {
+    const displayId = (idx + 1).toString().padStart(4, '0');
+    html += `
+    <div class="notice-row row-hover">
+      <div class="mono notice-id">${displayId}</div>
+      <div class="notice-body">
+         <div class="notice-title">${n.title}</div>
+         <textarea class="notice-textarea" readonly id="notice_text_${n.id}">${n.content}</textarea>
+      </div>
+      <div class="notice-actions">
+         <button class="btn-ghost" data-action="copy-notice" data-id="${n.id}" style="padding:7px; font-size:12px;">복사</button>
+         ${canManage ? `<button class="btn-ghost danger" data-action="del-notice" data-id="${n.id}" style="padding:7px; font-size:12px;">삭제</button>` : ""}
+      </div>
+    </div>`;
+  });
+  return html;
+}
+
+function getFilteredNotices() {
+  const query = NOTICE_SEARCH.trim().toLowerCase();
+  if (!query) return DATA.sideNotices;
+  return DATA.sideNotices.filter(n =>
+    (n.title && n.title.toLowerCase().includes(query)) ||
+    (n.content && n.content.toLowerCase().includes(query))
+  );
+}
+
+function renderNotices() {
+  const canManage = hasPermission("notices");
+  const filtered = getFilteredNotices();
+
+  const createFormHtml = canManage ? `
+    <div class="panel" style="padding:18px; margin-bottom:22px; display:flex; gap:12px; flex-direction:column;">
+      <div class="field"><label>새 공지 제목 (예: 보석상)</label><input id="snTitle" placeholder="제목 입력" style="width:100%; max-width:420px;"/></div>
+      <div class="field"><label>복사될 내용 (클립보드 양식)</label><textarea id="snContent" placeholder="/경찰청 [ 젤리 경찰청 ] 보석상에서..." style="width:100%; min-height:85px;"></textarea></div>
+      <button data-action="submit-notice" class="btn-gold" style="align-self:flex-start;">공지 추가</button>
+    </div>` : "";
+
+  return `
+    ${header("사이드 공지", `복사하여 바로 사용할 수 있는 사전 지정 양식 (전체 ${DATA.sideNotices.length}건${NOTICE_SEARCH.trim() ? ` · 검색결과 ${filtered.length}건` : ""})`)}
+    ${createFormHtml}
+    <div class="panel" style="display:flex; align-items:center; gap:8px; margin-bottom:14px; padding:6px 14px; max-width:320px;">
+      <span style="color:var(--muted);">⌕</span>
+      <input id="noticeSearch" data-action="search-notices" value="${NOTICE_SEARCH}" placeholder="제목 또는 내용 검색" style="background:transparent; border:none; padding:6px 0; width:100%; box-shadow:none;" />
+    </div>
+    <div class="panel">
+      <div style="display:flex; padding:12px 18px; border-bottom:1px solid var(--line); font-size:12px; color:var(--muted); font-weight:600; text-align:center;">
+         <div style="width:60px;">#</div>
+         <div style="flex:1;">사이드 공지 - 제목 / 클립보드(복사) 내용</div>
+         <div style="width:${canManage ? "70px" : "50px"};">작업</div>
+      </div>
+      <div id="noticeList">${renderNoticeList(filtered, canManage)}</div>
+    </div>`;
+}
+
+function renderApps() {
+  const pending = DATA.applications.filter(a => a.status === "요청됨");
+  const decided = DATA.applications.filter(a => a.status !== "요청됨");
+  return `
+    ${header("가입 신청 관리", `대기 ${pending.length}건`)}
+    <div class="mono" style="font-size:11.5px; color:var(--muted); margin-bottom:18px; line-height:1.6;">
+      가입 신청은 지원자가 로그인 화면에서 팩션 코드(<span style="color:var(--gold); font-weight:600;">${DATA.code}</span>)를 입력해 접수됩니다.
+    </div>
+    <div style="font-size:13px; color:var(--muted); margin-bottom:10px; font-weight:700;">대기 중</div>
+    <div class="panel" style="margin-bottom:24px;">
+      ${pending.length === 0 ? `<div style="padding:24px; text-align:center; color:var(--muted); font-size:13.5px;">대기 중인 신청이 없습니다.</div>` :
+      pending.map(a => `<div class="row-hover" style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-top:1px solid var(--line);">
+          <div><div style="font-size:14px; font-weight:600;">${a.name} <span class="mono" style="color:var(--muted); font-size:12px; font-weight:400;">· 고유번호 ${formatBadge(a.uid)}${a.username ? ` · 아이디 ${a.username}` : ""}</span></div></div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span class="badge ok">요청됨</span>
+            <button class="icon-btn" data-action="decide-app" data-id="${a.id}" data-status="승인" style="border-color:var(--ok); color:var(--ok);">✓</button>
+            <button class="icon-btn" data-action="decide-app" data-id="${a.id}" data-status="반려" style="border-color:var(--danger); color:var(--danger);">✕</button>
+          </div>
+        </div>`).join("")}
+    </div>
+    <div style="font-size:13px; color:var(--muted); margin-bottom:10px; font-weight:700;">처리 완료</div>
+    <div class="panel">
+      ${decided.length === 0 ? `<div style="padding:24px; text-align:center; color:var(--muted); font-size:13.5px;">처리 이력이 없습니다.</div>` :
+      decided.map(a => `<div style="display:flex; justify-content:space-between; padding:12px 18px; border-top:1px solid var(--line); font-size:13.5px;">
+          <span style="font-weight:500;">${a.name}</span><span class="badge ${a.status === "승인" ? "ok" : "danger"}">${a.status}</span>
+        </div>`).join("")}
+    </div>`;
+}
+
+function renderWarn() {
+  const membersByRank = {};
+  RANKS.forEach(r => membersByRank[r] = []);
+
+  DATA.accounts.filter(a => a.status === "재직").forEach(a => {
+    if (membersByRank[a.rank]) {
+      membersByRank[a.rank].push(a);
+    } else {
+      if (!membersByRank["기타"]) membersByRank["기타"] = [];
+      membersByRank["기타"].push(a);
+    }
+  });
+
+  let targetOptions = `<option value="">대상자를 선택하세요</option>`;
+  RANKS.forEach(r => {
+    if (membersByRank[r] && membersByRank[r].length > 0) {
+      targetOptions += `<optgroup label="${r}">`;
+      membersByRank[r].forEach(a => {
+        targetOptions += `<option value="${a.name}">${a.name} (No.${formatBadge(a.badge)})</option>`;
+      });
+      targetOptions += `</optgroup>`;
+    }
+  });
+  if (membersByRank["기타"] && membersByRank["기타"].length > 0) {
+    targetOptions += `<optgroup label="기타">`;
+    membersByRank["기타"].forEach(a => {
+      targetOptions += `<option value="${a.name}">${a.name} (No.${formatBadge(a.badge)})</option>`;
+    });
+    targetOptions += `</optgroup>`;
+  }
+
+  return `
+    ${header("내부경고 관리", `누적 ${DATA.warnings.length}건`)}
+    <div class="panel" style="padding:18px; margin-bottom:22px; display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+      <div class="field">
+        <label>대상자</label>
+        <select id="wTarget" style="width:180px;">
+          ${targetOptions}
+        </select>
+      </div>
+      <div class="field"><label>사유</label><input id="wReason" style="width:280px;" placeholder="경고 사유 입력" /></div>
+      <div class="field"><label>수위</label>
+        <select id="wSeverity" style="border-radius:var(--radius-sm);"><option>경고</option><option>중경고</option><option>최종경고</option></select>
+      </div>
+      <button data-action="submit-warn" class="btn-gold">등록</button>
+    </div>
+    <div class="panel">
+      ${DATA.warnings.length === 0 ? `<div style="padding:28px; text-align:center; color:var(--muted); font-size:13.5px;">등록된 내부경고가 없습니다.</div>` :
+      [...DATA.warnings].reverse().map(w => `<div class="row-hover" style="display:flex; justify-content:space-between; align-items:center; padding:12px 18px; border-top:1px solid var(--line);">
+          <div><div style="font-size:14px;"><strong style="font-weight:600;">${w.target_name || w.targetName}</strong> <span style="color:var(--muted);">· ${w.reason}</span></div>
+          <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:3px;">${w.date} · 발부: ${w.issued_by || w.issuedBy}</div></div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span class="badge ${w.severity === "최종경고" ? "danger" : w.severity === "중경고" ? "gold" : "steel"}">${w.severity}</span>
+            <button class="icon-btn" data-action="remove-warn" data-id="${w.id}">🗑</button>
+          </div>
+        </div>`).join("")}
+    </div>`;
+}
+
+function renderAccounts() {
+  const cols = "1fr 1fr 1.2fr 2fr 0.5fr";
+  let rows = `<div class="table-head" style="grid-template-columns:${cols};"><span>이름</span><span>아이디</span><span>새 비밀번호</span><span>메뉴 권한 할당 (팩션장/임원 제외)</span><span></span></div>`;
+
+  const PERM_LABELS = { members: "팩션원", attendance: "근태", notices: "공지", apps: "가입", warn: "경고" };
+
+  DATA.accounts.forEach(a => {
+    const userPerms = a.permissions || [];
+    const isTopAdmin = (a.rank === "처장" || a.isOwner);
+
+    let permHtml = `<div style="display:flex; gap:8px; flex-wrap:wrap; font-size:11.5px;">`;
+    if (isTopAdmin) {
+      permHtml += `<span style="color:var(--gold); font-weight:bold;">모든 권한 보유 (임원직/팩션장)</span>`;
+    } else {
+      Object.entries(PERM_LABELS).forEach(([key, label]) => {
+        const checked = userPerms.includes(key) ? "checked" : "";
+        permHtml += `<label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+                      <input type="checkbox" data-action="toggle-permission" data-id="${a.id}" data-perm="${key}" ${checked}> ${label}
+                    </label>`;
+      });
+    }
+    permHtml += `</div>`;
+
+    rows += `<div class="table-row row-hover" style="grid-template-columns:${cols}; align-items:center;">
+      <span style="font-weight:600;">${a.name}${a.id === SESSION.id ? '<span class="mono" style="color:var(--gold); font-size:11px;"> (나)</span>' : ''}${a.isOwner ? '<span class="mono" style="color:var(--gold); font-size:10px; border:1px solid var(--gold); border-radius:4px; padding:1px 5px; margin-left:6px;">설립자</span>' : ''}</span>
+      <span class="mono" style="color:var(--muted);">${a.username}</span>
+      <div style="display:flex; gap:6px;">
+        <input class="pwInput" data-id="${a.id}" placeholder="변경할 비밀번호" style="padding:6px 10px; font-size:12px; width:100%;" />
+        <button class="btn-ghost" data-action="change-password" data-id="${a.id}" style="padding:6px 10px; font-size:12px; white-space:nowrap;">변경</button>
+      </div>
+      ${permHtml}
+      ${a.isOwner ? '' : `<button class="icon-btn" data-action="remove-account" data-id="${a.id}">🗑</button>`}
+    </div>`;
+  });
+
+  return `
+    ${header("계정 및 권한 관리", "로그인 정보 및 하위 계급자들의 특정 메뉴 접근 권한을 관리합니다")}
+    <div class="panel">${rows}</div>
+    <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:14px; line-height:1.7;">
+      ※ 비밀번호는 SQLite 데이터베이스에 bcrypt 알고리즘으로 암호화되어 안전하게 보관됩니다.<br/>
+      ※ 체크박스를 클릭하면 권한이 즉시 서버로 반영됩니다.
+    </div>`;
+}
+
+function renderSettings() {
+  return `
+    ${header("설정", "팩션 코드 · 디스코드 웹훅 연동")}
+    <div class="panel" style="padding:22px; max-width:540px; margin-bottom:20px;">
+      <div class="field"><label>팩션 코드</label></div>
+      <div class="code-display" style="font-size:22px; padding:14px 0;">${DATA.code}</div>
+      <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:12px;">신규 가입 신청 시 이 코드가 필요합니다.</div>
+    </div>
+    <div class="panel" style="padding:22px; max-width:540px;">
+      <div class="field" style="margin-bottom:14px;">
+        <label>기본 알림 웹훅 URL (출퇴근 등)</label>
+        <input id="webhookUrl" class="mono" style="width:100%; font-size:13px;" placeholder="https://discord.com/api/webhooks/..." value="${DATA.webhookUrl || ""}" />
+      </div>
+      <div class="field">
+        <label>RP 보고서 전용 웹훅 URL</label>
+        <input id="rpWebhookUrl" class="mono" style="width:100%; font-size:13px;" placeholder="https://discord.com/api/webhooks/..." value="${DATA.rpWebhookUrl || ""}" />
+      </div>
+      <div style="display:flex; gap:10px; margin-top:14px;">
+        <button data-action="save-webhook" class="btn-gold">저장</button>
+        <button data-action="test-webhook" class="btn-ghost">➤ 테스트 전송</button>
+      </div>
+      <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:16px; line-height:1.7;">
+        출퇴근 및 가입 알림은 기본 웹훅으로, RP 보고서는 RP 전용 웹훅으로 전송됩니다.
+      </div>
+    </div>`;
+}
+
+function hslCss(h, s, l) { return `hsl(${h.toFixed(1)}, ${Math.max(0, s).toFixed(1)}%, ${Math.max(0, Math.min(100, l)).toFixed(1)}%)`; }
+
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let h = 0, s = 0;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h *= 60;
+  }
+  return { h, s: s * 100, l: l * 100 };
+}
+
+function extractDominantColor(imgUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const size = 48;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, size, size);
+        const { data } = ctx.getImageData(0, 0, size, size);
+
+        let sumSin = 0, sumCos = 0, sSum = 0, weight = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+          if (a < 128) continue;
+          const { h, s, l } = rgbToHsl(r, g, b);
+          if (l > 92 || l < 8) continue;
+          if (s < 12) continue;
+
+          const rad = (h * Math.PI) / 180;
+          sumSin += Math.sin(rad) * s;
+          sumCos += Math.cos(rad) * s;
+          sSum += s;
+          weight++;
+        }
+
+        if (weight === 0) { resolve(null); return; }
+
+        let hue = (Math.atan2(sumSin, sumCos) * 180) / Math.PI;
+        if (hue < 0) hue += 360;
+        const sat = sSum / weight;
+        resolve({ hue, sat });
+      } catch (e) {
+        reject(e);
+      }
+    };
+    img.onerror = () => reject(new Error("logo image load failed"));
+    img.src = imgUrl;
+  });
+}
+
+async function applyThemeFromLogo() {
+  let accentHue = 213;
+  let accentSat = 88;
+
+  try {
+    const result = await extractDominantColor(LOGO_URL);
+    if (result) {
+      accentHue = result.hue;
+      accentSat = Math.max(60, Math.min(92, result.sat));
+    }
+  } catch (e) {
+    console.warn("로고 색상 자동 추출 실패, 기본 테마로 대체합니다:", e.message);
+  }
+
+  const steelHue = (accentHue + 20) % 360;
+
+  const gold = hslCss(accentHue, accentSat, 62);
+  const gold2 = hslCss(accentHue, accentSat, 50);
+  const goldBg = `hsla(${accentHue.toFixed(1)}, ${accentSat.toFixed(1)}%, 62%, 0.16)`;
+  const bg = hslCss(accentHue, 30, 16);
+  const panel = hslCss(accentHue, 24, 21);
+  const panel2 = hslCss(accentHue, 22, 25.5);
+  const line = hslCss(accentHue, 24, 34);
+  const muted = hslCss(accentHue, 14, 70);
+  const text = hslCss(accentHue, 10, 97);
+  const steel = hslCss(steelHue, 75, 66);
+
+  const root = document.documentElement.style;
+  root.setProperty("--gold", gold);
+  root.setProperty("--gold2", gold2);
+  root.setProperty("--gold-bg", goldBg);
+  root.setProperty("--bg", bg);
+  root.setProperty("--panel", panel);
+  root.setProperty("--panel2", panel2);
+  root.setProperty("--line", line);
+  root.setProperty("--muted", muted);
+  root.setProperty("--text", text);
+  root.setProperty("--steel", steel);
+}
 
 const CLICK_ACTIONS = {
   "goto-create": () => { VIEW = "create"; render(); },
   "goto-join": () => { VIEW = "join"; render(); },
   "goto-login": () => { VIEW = "login"; render(); },
   "goto-gate": () => { VIEW = "gate"; render(); },
-  "switch-tab": (el) => { TAB = el.dataset.tab; refreshTab(); },
-  "logout": () => logout(),
-  
-  "toggle-add-member": () => {
-    const el = document.getElementById("addMemberForm");
-    if(el) el.style.display = el.style.display === "none" ? "flex" : "none";
+
+  "switch-tab": (el) => {
+    TAB = el.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    el.classList.add('active');
+    refreshTab();
   },
 
+  "logout": () => logout(),
+
+  "law-cat": (el) => {
+    LAW_CAT = el.dataset.cat;
+    document.querySelectorAll('[data-action="law-cat"]').forEach(btn => {
+      const active = btn.dataset.cat === LAW_CAT;
+      btn.classList.toggle('active', active);
+      btn.style.background = active ? 'var(--gold)' : '';
+      btn.style.color = active ? '#000' : '';
+    });
+    refreshLawResults();
+  },
+  "law-toggle": (el) => {
+    const key = el.dataset.key;
+    if (LAW_SELECTED.has(key)) LAW_SELECTED.delete(key);
+    else LAW_SELECTED.add(key);
+    LAW_LAST_CLICKED = LAW_DATA.find(i => getLawKey(i) === key);
+    refreshLawResults();
+  },
+  "law-select-all": () => {
+    LAW_DATA.forEach(i => LAW_SELECTED.add(getLawKey(i)));
+    refreshLawResults();
+  },
+  "law-clear-all": () => {
+    LAW_SELECTED.clear();
+    refreshLawResults();
+  },
+
+  // ---- 출퇴근: 로컬에서 즉시 상태 뒤집고, 서버는 백그라운드로 ----
+  "toggle-work": async () => {
+    const wasWorking = DATA.attendance.find(a => a.user_id === SESSION.id && !a.clock_out_time);
+    const nowIso = new Date().toISOString();
+    let addedEntry = null;
+
+    if (wasWorking) {
+      wasWorking.clock_out_time = nowIso;
+    } else {
+      addedEntry = { user_id: SESSION.id, name: SESSION.name, badge: SESSION.badge, clock_in_time: nowIso, clock_out_time: null };
+      DATA.attendance.push(addedEntry);
+    }
+
+    const statusText = wasWorking ? "퇴근" : "출근";
+    showToast(`[${SESSION.rank}] ${SESSION.name} 님, ${statusText} 처리되었습니다.`, wasWorking ? "danger" : "ok");
+    silentSync();
+
+    try {
+      await apiCall("/attendance/toggle", "POST");
+    } catch (e) {
+      if (wasWorking) wasWorking.clock_out_time = null;
+      else if (addedEntry) DATA.attendance = DATA.attendance.filter(a => a !== addedEntry);
+      silentSync();
+    }
+  },
+
+  "del-notice": async (el) => {
+    const id = el.dataset.id;
+    const backup = DATA.sideNotices;
+    DATA.sideNotices = DATA.sideNotices.filter(n => String(n.id) !== String(id));
+    refreshTab();
+    showToast("공지가 삭제되었습니다", "danger");
+    try {
+      await apiCall(`/notices/${id}`, "DELETE");
+    } catch (e) {
+      DATA.sideNotices = backup;
+      refreshTab();
+    }
+  },
+  "copy-notice": (el) => {
+    const id = el.dataset.id;
+    const textarea = document.getElementById(`notice_text_${id}`);
+    if (textarea) {
+      textarea.select();
+      textarea.setSelectionRange(0, 99999);
+      navigator.clipboard.writeText(textarea.value).then(() => {
+        showToast("클립보드에 복사되었습니다", "ok");
+      }).catch(err => {
+        showToast("복사 실패. 브라우저 설정을 확인하세요.", "danger");
+      });
+    }
+  },
+
+  "toggle-add-member": () => {
+    const f = document.getElementById("addMemberForm");
+    f.style.display = f.style.display === "none" ? "flex" : "none";
+  },
+  "export-members": () => {
+    const ws = XLSX.utils.json_to_sheet(DATA.accounts.map(a => ({
+      이름: a.name, 고유번호: formatBadge(a.badge), 계급: a.rank, 등급: getRankCategory(a.rank), 상태: a.status, 아이디: a.username, 가입일: a.join_date || a.joinDate
+    })));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "팩션원명단");
+    XLSX.writeFile(wb, `${DATA.name}_팩션원명단.xlsx`);
+    showToast("엑셀 파일을 내려받았습니다");
+  },
+
+  // ---- 팩션원 등록: 임시 항목을 즉시 목록에 추가 ----
   "submit-member": async () => {
     const name = document.getElementById("mName").value.trim();
-    const badge = document.getElementById("mBadge").value.trim();
+    const badgeRaw = document.getElementById("mBadge").value.trim();
+    const badge = formatBadge(badgeRaw);
     const rank = document.getElementById("mRank").value;
-    
-    if (!name) return showToast("이름을 입력해주세요.", "danger");
+    if (!name || !badge) { showToast("이름과 고유번호를 입력하세요", "danger"); return; }
 
-    const tempId = Date.now().toString();
-    const newAcc = { id: tempId, name, badge, rank, status: "재직", joined_at: new Date().toISOString() };
-    DATA.accounts.unshift(newAcc);
+    const tempId = `temp_${Date.now()}`;
+    DATA.accounts.push({
+      id: tempId, name, badge, rank, status: "재직",
+      username: "생성 중...", join_date: new Date().toISOString().slice(0, 10), permissions: []
+    });
+    document.getElementById("addMemberForm").style.display = "none";
+    showToast(`${name} 팩션원 등록 처리 중`);
     refreshTab();
 
     try {
       const res = await apiCall("/members", "POST", { name, badge, rank });
-      // ------ [기존 끊어진 부분 이후 완성] ------
       const idx = DATA.accounts.findIndex(a => a.id === tempId);
       if (idx !== -1) {
-        DATA.accounts[idx] = res.member || res.account || { ...DATA.accounts[idx], id: res.id || tempId };
+        DATA.accounts[idx] = { ...DATA.accounts[idx], id: res.id ?? tempId, username: res.username };
       }
-      showToast(`${name} 팩션원 등록이 완료되었습니다.`, "ok");
+      showToast(`${name} 팩션원 등록 완료 (초기 계정 ${res.username})`);
       refreshTab();
     } catch (e) {
       DATA.accounts = DATA.accounts.filter(a => a.id !== tempId);
@@ -906,216 +1458,394 @@ const CLICK_ACTIONS = {
     }
   },
 
-  "edit-badge": (el) => { EDIT_BADGE_ID = el.dataset.id; refreshMemberList(); },
-  "cancel-badge-edit": () => { EDIT_BADGE_ID = null; refreshMemberList(); },
-  
-  "save-badge": async (el) => {
-    const id = el.dataset.id;
-    const input = document.getElementById(`badgeInput_${id}`);
-    if (!input) return;
-    const newBadge = formatBadge(input.value.trim());
-    const acc = DATA.accounts.find(a => String(a.id) === String(id));
-    if (!acc || acc.badge === newBadge) { EDIT_BADGE_ID = null; refreshMemberList(); return; }
-    
-    const oldBadge = acc.badge;
-    acc.badge = newBadge;
-    EDIT_BADGE_ID = null;
-    refreshMemberList();
-    
-    try { 
-      await apiCall(`/members/${id}/badge`, "PUT", { badge: newBadge }); 
-      showToast("고유번호가 변경되었습니다.", "ok"); 
-    } catch (e) { 
-      acc.badge = oldBadge; 
-      refreshMemberList(); 
-    }
-  },
-  
   "toggle-status": async (el) => {
     const id = el.dataset.id;
     const acc = DATA.accounts.find(a => String(a.id) === String(id));
-    if(!acc) return;
-    const oldStatus = acc.status;
-    acc.status = oldStatus === "재직" ? "해임" : "재직";
+    const prevStatus = acc ? acc.status : null;
+    if (acc) acc.status = acc.status === "재직" ? "해임" : "재직";
+    showToast("상태가 변경되었습니다");
+    refreshTab();
+
+    try {
+      await apiCall(`/members/${id}/status`, "PATCH");
+    } catch (e) {
+      if (acc && prevStatus) acc.status = prevStatus;
+      refreshTab();
+    }
+  },
+  "edit-badge": (el) => {
+    EDIT_BADGE_ID = el.dataset.id;
     refreshMemberList();
-    try { 
-      await apiCall(`/members/${id}/status`, "PUT", { status: acc.status }); 
-      showToast("상태가 변경되었습니다.", "ok");
-    } catch (e) { 
-      acc.status = oldStatus; 
-      refreshMemberList(); 
+  },
+  "cancel-badge-edit": () => {
+    EDIT_BADGE_ID = null;
+    refreshMemberList();
+  },
+  "save-badge": async (el) => {
+    const id = el.dataset.id;
+    const input = document.getElementById(`badgeInput_${id}`);
+    const newBadge = input ? input.value.trim() : "";
+    if (!newBadge) { showToast("고유번호를 입력하세요", "danger"); return; }
+
+    const acc = DATA.accounts.find(a => String(a.id) === String(id));
+    const prevBadge = acc ? acc.badge : null;
+    if (acc) acc.badge = newBadge;
+    EDIT_BADGE_ID = null;
+    showToast("고유번호가 변경되었습니다");
+    refreshMemberList();
+
+    try {
+      await apiCall(`/members/${id}/badge`, "PATCH", { badge: newBadge });
+    } catch (e) {
+      if (acc && prevBadge !== null) acc.badge = prevBadge;
+      refreshMemberList();
     }
   },
 
-  "law-cat": (el) => {
-    LAW_CAT = el.dataset.cat;
-    refreshLawResults();
-  },
-  
-  "law-toggle": (el) => {
-    const key = el.dataset.key;
-    if (LAW_SELECTED.has(key)) LAW_SELECTED.delete(key);
-    else { LAW_SELECTED.add(key); LAW_LAST_CLICKED = LAW_DATA.find(i => getLawKey(i) === key); }
-    refreshLawResults();
+  // ---- 가입 신청 승인/반려: 대기 목록에서 즉시 처리 ----
+  "decide-app": async (el) => {
+    const id = el.dataset.id;
+    const status = el.dataset.status;
+    const backup = DATA.applications;
+    DATA.applications = DATA.applications.map(a => String(a.id) === String(id) ? { ...a, status } : a);
+    showToast(status === "승인" ? "승인 처리 중..." : "가입 신청을 반려했습니다", status === "승인" ? "ok" : "danger");
+    refreshTab();
+
+    try {
+      const res = await apiCall(`/applications/${id}/decide`, "PATCH", { status });
+      if (res.createdUser) {
+        DATA.accounts.push(res.createdUser);
+        showToast(`승인 완료 (아이디: ${res.createdUser.username}) · 신청자가 설정한 비밀번호로 로그인 가능합니다`, "ok");
+        refreshTab();
+      }
+    } catch (e) {
+      DATA.applications = backup;
+      refreshTab();
+    }
   },
 
-  "law-select-all": () => {
-    LAW_SEARCH = document.getElementById("lawSearchInput").value.trim().toLowerCase();
-    LAW_DATA.forEach(item => {
-      if (LAW_CAT !== "전체" && item.category !== LAW_CAT) return;
-      if (LAW_SEARCH && !(item.name.toLowerCase().includes(LAW_SEARCH) || item.category.toLowerCase().includes(LAW_SEARCH))) return;
-      LAW_SELECTED.add(getLawKey(item));
+  // ---- 내부경고 등록: 즉시 목록에 추가 ----
+  "submit-warn": async () => {
+    const targetSelect = document.getElementById("wTarget");
+    const targetName = targetSelect.value.trim();
+    const reason = document.getElementById("wReason").value.trim();
+    const severity = document.getElementById("wSeverity").value;
+    if (!targetName || !reason) { showToast("대상자와 사유를 입력하세요", "danger"); return; }
+
+    const tempId = `temp_${Date.now()}`;
+    DATA.warnings.push({
+      id: tempId, target_name: targetName, reason, severity,
+      date: new Date().toLocaleDateString('ko-KR'), issued_by: SESSION.name
     });
-    refreshLawResults();
+    document.getElementById("wReason").value = "";
+    showToast("내부경고가 등록되었습니다");
+    refreshTab();
+
+    try {
+      const res = await apiCall("/warnings", "POST", { targetName, reason, severity });
+      if (res.warning) {
+        const idx = DATA.warnings.findIndex(w => w.id === tempId);
+        if (idx !== -1) DATA.warnings[idx] = res.warning;
+        refreshTab();
+      }
+    } catch (e) {
+      DATA.warnings = DATA.warnings.filter(w => w.id !== tempId);
+      refreshTab();
+    }
+  },
+  "remove-warn": async (el) => {
+    const id = el.dataset.id;
+    const backup = DATA.warnings;
+    DATA.warnings = DATA.warnings.filter(w => String(w.id) !== String(id));
+    refreshTab();
+    showToast("삭제되었습니다", "danger");
+    try {
+      await apiCall(`/warnings/${id}`, "DELETE");
+    } catch (e) {
+      DATA.warnings = backup;
+      refreshTab();
+    }
   },
 
-  "law-clear-all": () => {
-    LAW_SELECTED.clear();
-    LAW_LAST_CLICKED = null;
-    refreshLawResults();
-  }
+  "change-password": async (el) => {
+    const id = el.dataset.id;
+    const input = document.querySelector(`.pwInput[data-id="${id}"]`);
+    const newPassword = input.value;
+    if (!newPassword || newPassword.length < 6) { showToast("6자 이상 입력하세요", "danger"); return; }
+
+    input.value = "";
+    showToast("비밀번호가 변경되었습니다");
+
+    try {
+      await apiCall(`/members/${id}/password`, "PATCH", { newPassword });
+    } catch (e) {
+      showToast("비밀번호 변경에 실패했습니다. 다시 시도해주세요.", "danger");
+    }
+  },
+  "remove-account": async (el) => {
+    const id = el.dataset.id;
+    const backup = DATA.accounts;
+    DATA.accounts = DATA.accounts.filter(a => String(a.id) !== String(id));
+    refreshTab();
+    showToast("계정이 삭제되었습니다", "danger");
+    try {
+      await apiCall(`/members/${id}`, "DELETE");
+    } catch (e) {
+      DATA.accounts = backup;
+      refreshTab();
+    }
+  },
+
+  // ---- 웹훅 저장: 즉시 저장 처리 ----
+  "save-webhook": async () => {
+    const webhookUrl = document.getElementById("webhookUrl").value.trim();
+    const rpWebhookUrl = document.getElementById("rpWebhookUrl").value.trim();
+    const backup = { webhookUrl: DATA.webhookUrl, rpWebhookUrl: DATA.rpWebhookUrl };
+    DATA.webhookUrl = webhookUrl;
+    DATA.rpWebhookUrl = rpWebhookUrl;
+    showToast("웹훅 주소가 저장되었습니다");
+
+    try {
+      await apiCall("/settings/webhook", "PATCH", { webhookUrl, rpWebhookUrl });
+    } catch (e) {
+      DATA.webhookUrl = backup.webhookUrl;
+      DATA.rpWebhookUrl = backup.rpWebhookUrl;
+      refreshTab();
+    }
+  },
+  "test-webhook": async () => {
+    const webhookUrl = document.getElementById("webhookUrl").value.trim();
+    if (!webhookUrl) { showToast("웹훅 주소를 먼저 입력하세요.", "danger"); return; }
+    try {
+      await apiCall("/settings/webhook-test", "POST", { webhookUrl });
+      showToast("디스코드로 테스트 메시지를 전송했습니다");
+    } catch (e) { }
+  },
 };
 
-/* ------------------------------ 전역 이벤트 리스너 세팅 ------------------------------ */
+const SUBMIT_ACTIONS = {
+  "submit-create": async () => {
+    const name = document.getElementById("cfName").value.trim();
+    const founderName = document.getElementById("cfFounderName").value.trim();
+    const badge = document.getElementById("cfBadge").value.trim();
+    const username = document.getElementById("cfUser").value.trim();
+    const password = document.getElementById("cfPass").value;
+    const err = document.getElementById("createErr");
 
-document.addEventListener("click", e => {
-  const btn = e.target.closest("[data-action]");
-  if(btn && CLICK_ACTIONS[btn.dataset.action]) {
-    e.preventDefault();
-    CLICK_ACTIONS[btn.dataset.action](btn);
-  }
-});
-
-document.addEventListener("input", e => {
-  if (e.target.dataset.action === "law-search") {
-    LAW_SEARCH = e.target.value;
-    refreshLawResults();
-  }
-  if (e.target.dataset.action === "search-members") {
-    refreshMemberList();
-  }
-});
-
-document.addEventListener("change", async e => {
-  if (e.target.dataset.action === "change-rank") {
-    const id = e.target.dataset.id;
-    const newRank = e.target.value;
-    const acc = DATA.accounts.find(a => String(a.id) === String(id));
-    if(!acc) return;
-    const oldRank = acc.rank;
-    acc.rank = newRank;
-    refreshMemberList();
-    try { 
-      await apiCall(`/members/${id}/rank`, "PUT", { rank: newRank }); 
-      showToast("계급이 변경되었습니다.", "ok"); 
-    } catch(err) { 
-      acc.rank = oldRank; 
-      refreshMemberList(); 
+    if (!name || !founderName || !badge || !username || password.length < 6) {
+      err.textContent = "모든 항목을 입력하세요 (비밀번호 6자 이상)"; err.style.display = "block"; return;
     }
-  }
-});
 
-document.addEventListener("submit", async e => {
-  e.preventDefault();
-  const action = e.target.dataset.action;
-  if (!action) return;
-
-  if (action === "submit-login") {
-    const user = document.getElementById("loginUser").value.trim();
-    const pass = document.getElementById("loginPass").value.trim();
-    const err = document.getElementById("loginErr");
-    err.style.display="none";
-    if(!user || !pass) { err.textContent="입력 정보를 확인하세요."; err.style.display="block"; return; }
+    const code = genFactionCode();
     try {
-      const res = await apiCall("/auth/login", "POST", { username: user, password: pass });
+      await apiCall("/factions/create", "POST", { code, name, founderName, username, password, badge });
+      LAST = { code, factionName: name };
+      VIEW = "createDone"; render();
+    } catch (e) { }
+  },
+  "submit-join": async () => {
+    const code = document.getElementById("jfCode").value.trim().toUpperCase();
+    const name = document.getElementById("jfName").value.trim();
+    const uid = formatBadge(document.getElementById("jfUid").value.trim());
+    const username = document.getElementById("jfUser").value.trim();
+    const password = document.getElementById("jfPass").value;
+    const err = document.getElementById("joinErr");
+
+    if (!code || !name || !uid || !username || password.length < 6) {
+      err.textContent = "모든 항목을 입력하세요 (비밀번호 6자 이상)"; err.style.display = "block"; return;
+    }
+
+    try {
+      await apiCall("/factions/join-request", "POST", { code, name, uid, username, password });
+      VIEW = "joinSent"; render();
+    } catch (e) {
+      if (err) { err.textContent = e.message; err.style.display = "block"; }
+    }
+  },
+  "submit-login": async () => {
+    const username = document.getElementById("loginUser").value.trim();
+    const password = document.getElementById("loginPass").value;
+    const errEl = document.getElementById("loginErr");
+
+    try {
+      const res = await apiCall("/auth/login", "POST", { username, password });
       TOKEN = res.token;
-      SESSION = res.session;
+      SESSION = res.user;
       localStorage.setItem("bureau_token", TOKEN);
       localStorage.setItem("bureau_session", JSON.stringify(SESSION));
+
       await fetchFactionData();
+      TAB = "dash";
       startPolling();
-    } catch(errMsg) { 
-      err.textContent = errMsg.message || "로그인 실패"; 
-      err.style.display="block"; 
+    } catch (e) {
+      if (errEl) { errEl.textContent = e.message; errEl.style.display = "block"; }
     }
-  } 
-  else if (action === "submit-create") {
-    const name = document.getElementById("cfName").value.trim();
-    const founder = document.getElementById("cfFounderName").value.trim();
-    const badge = document.getElementById("cfBadge").value.trim();
-    const user = document.getElementById("cfUser").value.trim();
-    const pass = document.getElementById("cfPass").value.trim();
-    const err = document.getElementById("createErr");
-    err.style.display="none";
-    try {
-      const res = await apiCall("/auth/create", "POST", { name, founderName: founder, badge, username: user, password: pass });
-      LAST = { factionName: name, code: res.code };
-      VIEW = "createDone";
-      render();
-    } catch(errMsg) { 
-      err.textContent = errMsg.message; 
-      err.style.display="block"; 
-    }
-  }
-  else if (action === "submit-join") {
-    const code = document.getElementById("jfCode").value.trim();
-    const name = document.getElementById("jfName").value.trim();
-    const uid = document.getElementById("jfUid").value.trim();
-    const user = document.getElementById("jfUser").value.trim();
-    const pass = document.getElementById("jfPass").value.trim();
-    const err = document.getElementById("joinErr");
-    err.style.display="none";
-    try {
-      await apiCall("/auth/join", "POST", { code, name, uid, username: user, password: pass });
-      VIEW = "joinSent";
-      render();
-    } catch(errMsg) { 
-      err.textContent = errMsg.message; 
-      err.style.display="block"; 
-    }
-  }
-  else if (action === "submit-rp-report") {
-    const loc = document.getElementById("rpLocation").value.trim();
-    const target = document.getElementById("rpTargetFaction").value.trim();
-    const result = document.getElementById("rpResult").value.trim();
-    const content = document.getElementById("rpContent").value.trim();
-    
-    // Optimistic Update
-    const newReport = { 
-      name: SESSION.name, badge: SESSION.badge, rank: SESSION.rank, 
-      location: loc, target_faction: target, result, content, created_at: new Date().toISOString() 
-    };
-    
-    if(!DATA.rpReports) DATA.rpReports = [];
-    DATA.rpReports.unshift(newReport);
+  },
+
+  // ---- 사이드 공지 추가: 임시 항목을 즉시 목록에 추가 ----
+  "submit-notice": async () => {
+    const titleInput = document.getElementById("snTitle");
+    const contentInput = document.getElementById("snContent");
+    const title = titleInput.value.trim();
+    const content = contentInput.value.trim();
+    if (!title || !content) { showToast("제목과 내용을 모두 입력하세요", "danger"); return; }
+
+    const tempId = `temp_${Date.now()}`;
+    DATA.sideNotices.push({ id: tempId, title, content });
+    titleInput.value = "";
+    contentInput.value = "";
+    showToast("공지가 추가되었습니다");
     refreshTab();
-    showToast("RP 보고서가 전송되었습니다.", "ok");
 
     try {
-      const res = await apiCall("/rp-reports", "POST", { location: loc, target_faction: target, result, content });
-      // replace with backend confirmed ID/data if needed
-    } catch(errMsg) {
-      // rollback
-      DATA.rpReports.shift();
+      const res = await apiCall("/notices", "POST", { title, content });
+      const idx = DATA.sideNotices.findIndex(n => n.id === tempId);
+      if (idx !== -1 && res.notice) DATA.sideNotices[idx] = res.notice;
+      else if (idx !== -1 && res.id) DATA.sideNotices[idx].id = res.id;
+      refreshTab();
+    } catch (e) {
+      DATA.sideNotices = DATA.sideNotices.filter(n => n.id !== tempId);
+      refreshTab();
+    }
+  },
+
+  // ---- RP 보고서: 즉시 목록에 추가 ----
+  "submit-rp-report": async () => {
+    const locationInput = document.getElementById("rpLocation");
+    const targetInput = document.getElementById("rpTargetFaction");
+    const resultInput = document.getElementById("rpResult");
+    const contentInput = document.getElementById("rpContent");
+
+    const location = locationInput.value.trim();
+    const targetFaction = targetInput.value.trim();
+    const result = resultInput.value.trim();
+    const content = contentInput.value.trim();
+
+    const tempId = `temp_${Date.now()}`;
+    DATA.rpReports = DATA.rpReports || [];
+    DATA.rpReports.unshift({
+      id: tempId, user_id: SESSION.id, rank: SESSION.rank, name: SESSION.name, badge: SESSION.badge,
+      location, target_faction: targetFaction, result, content, created_at: new Date().toISOString()
+    });
+    locationInput.value = ""; targetInput.value = ""; resultInput.value = ""; contentInput.value = "";
+    showToast("RP 보고서가 디스코드로 전송되었습니다!", "ok");
+    refreshTab();
+
+    try {
+      const res = await apiCall("/rp-reports", "POST", { location, targetFaction, result, content });
+      if (res.report) {
+        const idx = DATA.rpReports.findIndex(r => r.id === tempId);
+        if (idx !== -1) DATA.rpReports[idx] = res.report;
+        refreshTab();
+      }
+    } catch (e) {
+      DATA.rpReports = DATA.rpReports.filter(r => r.id !== tempId);
       refreshTab();
     }
   }
-});
+};
 
-/* ------------------------------ 시스템 초기화 ------------------------------ */
+const CHANGE_ACTIONS = {
+  // ---- 계급 변경: 즉시 반영 ----
+  "change-rank": async (el) => {
+    const id = el.dataset.id;
+    const newRank = el.value;
+    const acc = DATA.accounts.find(a => String(a.id) === String(id));
+    const prevRank = acc ? acc.rank : null;
+    if (acc) acc.rank = newRank;
+    showToast("계급이 변경되었습니다");
+    refreshTab();
 
-async function init() {
-  if(TOKEN) {
-    try { 
-      await fetchFactionData(); 
-      startPolling(); 
-    } catch(e) { 
-      logout(); 
+    try {
+      await apiCall(`/members/${id}/rank`, "PATCH", { rank: newRank });
+    } catch (e) {
+      if (acc && prevRank) acc.rank = prevRank;
+      refreshTab();
     }
+  },
+
+  // ---- 권한 체크박스: 즉시 반영 ----
+  "toggle-permission": async (el) => {
+    const id = el.dataset.id;
+    const perm = el.dataset.perm;
+    const isGranted = el.checked;
+    const acc = DATA.accounts.find(a => String(a.id) === String(id));
+
+    if (acc) {
+      acc.permissions = acc.permissions || [];
+      if (isGranted) { if (!acc.permissions.includes(perm)) acc.permissions.push(perm); }
+      else { acc.permissions = acc.permissions.filter(p => p !== perm); }
+    }
+    showToast(`${isGranted ? '권한 부여됨' : '권한 해제됨'}`);
+
+    try {
+      await apiCall(`/members/${id}/permissions`, "PATCH", { permission: perm, granted: isGranted });
+    } catch (e) {
+      el.checked = !isGranted;
+      if (acc) {
+        if (!isGranted) { if (!acc.permissions.includes(perm)) acc.permissions.push(perm); }
+        else { acc.permissions = acc.permissions.filter(p => p !== perm); }
+      }
+    }
+  }
+};
+
+const INPUT_ACTIONS = {
+  "search-members": (el) => {
+    refreshMemberList();
+  },
+  "law-search": (el) => {
+    LAW_SEARCH = el.value;
+    refreshLawResults();
+  },
+  "search-notices": (el) => {
+    NOTICE_SEARCH = el.value;
+    const canManage = hasPermission("notices");
+    const filtered = getFilteredNotices();
+    const listEl = document.getElementById("noticeList");
+    if (listEl) listEl.innerHTML = renderNoticeList(filtered, canManage);
+  }
+};
+
+function initEventDelegation() {
+  const app = document.getElementById("app");
+  app.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el || !CLICK_ACTIONS[el.dataset.action]) return;
+    CLICK_ACTIONS[el.dataset.action](el, e);
+  });
+  app.addEventListener("submit", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el || !SUBMIT_ACTIONS[el.dataset.action]) return;
+    e.preventDefault();
+
+    const btn = el.querySelector('button[type="submit"]');
+    if (btn && btn.disabled) return;
+    if (btn) btn.disabled = true;
+
+    Promise.resolve(SUBMIT_ACTIONS[el.dataset.action](el, e)).finally(() => {
+      if (btn) btn.disabled = false;
+    });
+  });
+  app.addEventListener("change", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el || !CHANGE_ACTIONS[el.dataset.action]) return;
+    CHANGE_ACTIONS[el.dataset.action](el, e);
+  });
+  app.addEventListener("input", (e) => {
+    const el = e.target.closest("[data-action]");
+    if (!el || !INPUT_ACTIONS[el.dataset.action]) return;
+    INPUT_ACTIONS[el.dataset.action](el, e);
+  });
+}
+
+(async function init() {
+  applyThemeFromLogo();
+  initEventDelegation();
+  if (TOKEN && SESSION) {
+    await fetchFactionData();
+    startPolling();
   } else {
     render();
   }
-}
-
-// 앱 실행
-init();
+})();
