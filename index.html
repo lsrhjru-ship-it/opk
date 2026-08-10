@@ -11,11 +11,19 @@
     <meta property="og:site_name" content="보안국 인트라넷" />
     <meta property="og:title" content="보안국 인트라넷" />
     <meta property="og:description" content="보안국" />
-    <!-- 썸네일로 띄울 이미지 URL (보안국 젤리 로고) -->
+    <!-- 썸네일로 띄울 이미지 URL (app.js의 LOGO_URL과 동일한 로고로 통일) -->
     <meta property="og:image"
-        content="https://cdn.discordapp.com/attachments/1532756181557313706/1532757610464411719/3c9c4182b3e7bae0.png?ex=6a77e683&is=6a769503&hm=7dfc4b4e888cda0fde247badee027883426957dc6dd57700c1cbcdc28b96dacb" />
+        content="https://cdn.discordapp.com/attachments/1531501210610434168/1536237644843982888/8D4AAAAASUVORK5CYII.png?ex=6a7aac4c&is=6a795acc&hm=68f874315d648df6b51ad41a2ee748aeddb8f6c7d930768b3d17a21a3180d580" />
     <!-- 디스코드 임베드 좌측 포인트 라인 색상 (보안국 시그니처 골드색) -->
     <meta name="theme-color" content="#A87030" />
+
+    <!-- 브라우저 탭 파비콘도 동일한 로고로 통일 -->
+    <link rel="icon" type="image/png"
+        href="https://cdn.discordapp.com/attachments/1531501210610434168/1536237644843982888/8D4AAAAASUVORK5CYII.png?ex=6a7aac4c&is=6a795acc&hm=68f874315d648df6b51ad41a2ee748aeddb8f6c7d930768b3d17a21a3180d580" />
+
+    <!-- 로고를 최대한 빨리 받아오도록 미리 로드 (초기 로딩 체감 속도 개선) -->
+    <link rel="preload" as="image" crossorigin="anonymous"
+        href="https://cdn.discordapp.com/attachments/1531501210610434168/1536237644843982888/8D4AAAAASUVORK5CYII.png?ex=6a7aac4c&is=6a795acc&hm=68f874315d648df6b51ad41a2ee748aeddb8f6c7d930768b3d17a21a3180d580" />
 
     <!-- 고급 Pretendard 폰트 & 엑셀 라이브러리 -->
     <link rel="stylesheet" as="style" crossorigin
