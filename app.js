@@ -18,6 +18,7 @@ let LAST = {};
 // 자동 새로고침(폴링) 설정
 const POLL_INTERVAL_MS = 15000; // 15초마다 서버 데이터 재조회
 let pollTimer = null;
+let LAST_SNAPSHOT = null; // 마지막으로 렌더링한 데이터의 스냅샷 (변경 감지용)
 
 /* ------------------------------ 계급 및 권한 유틸 ------------------------------ */
 
@@ -153,25 +154,36 @@ async function fetchFactionData() {
   if (!TOKEN) return;
   try {
     const res = await apiCall("/faction/data");
-    DATA = res.faction;
+    const newData = res.faction;
 
     // 본인 계정의 최신 계급/권한을 세션에 동기화 (관리자가 권한을 새로 부여해도
     // 로그아웃 없이 즉시 반영되도록 하기 위함 — 그렇지 않으면 로그인 시점의
     // 오래된 SESSION.permissions 값이 계속 사용되어 새로 받은 권한 탭이 안 보임)
+    let newSessionBits = null;
     if (SESSION) {
-      const me = DATA.accounts.find(a => String(a.id) === String(SESSION.id));
-      if (me) {
-        SESSION.rank = me.rank;
-        SESSION.permissions = me.permissions || [];
-        SESSION.isOwner = !!me.isOwner;
-        localStorage.setItem("bureau_session", JSON.stringify(SESSION));
-      } else {
+      const me = newData.accounts.find(a => String(a.id) === String(SESSION.id));
+      if (!me) {
         // 본인 계정이 삭제된 경우
         return logout();
       }
+      newSessionBits = { rank: me.rank, permissions: me.permissions || [], isOwner: !!me.isOwner };
     }
 
-    render();
+    // 실제로 내용이 바뀌었는지 확인 (폴링으로 매번 화면을 통째로 다시 그리면
+    // 데이터가 그대로여도 스크롤/펼침 상태가 흔들릴 수 있어, 변경이 있을 때만 재렌더링한다)
+    const snapshot = JSON.stringify({ data: newData, session: newSessionBits });
+    const changed = snapshot !== LAST_SNAPSHOT;
+    LAST_SNAPSHOT = snapshot;
+
+    DATA = newData;
+    if (SESSION && newSessionBits) {
+      SESSION.rank = newSessionBits.rank;
+      SESSION.permissions = newSessionBits.permissions;
+      SESSION.isOwner = newSessionBits.isOwner;
+      localStorage.setItem("bureau_session", JSON.stringify(SESSION));
+    }
+
+    if (changed) render();
   } catch (e) {
     logout();
   }
@@ -240,6 +252,7 @@ function logout() {
   TOKEN = null;
   SESSION = null;
   DATA = null;
+  LAST_SNAPSHOT = null;
   localStorage.removeItem("bureau_token");
   localStorage.removeItem("bureau_session");
   VIEW = "gate";
@@ -268,7 +281,14 @@ function render() {
   const activeTabs = getAccessibleTabs();
   if (!activeTabs.find(t => t.key === TAB)) TAB = "dash";
 
+  // 재렌더링으로 스크롤 위치가 맨 위로 튀지 않도록, 기존 스크롤 위치를 기억했다가 복원한다.
+  const prevScroll = document.getElementById("mainScroll");
+  const scrollTop = prevScroll ? prevScroll.scrollTop : 0;
+
   app.innerHTML = renderShell(activeTabs);
+
+  const nextScroll = document.getElementById("mainScroll");
+  if (nextScroll) nextScroll.scrollTop = scrollTop;
 }
 
 function refreshTab() {
@@ -402,7 +422,7 @@ function renderShell(tabs) {
         <button data-action="logout" class="btn-ghost" style="margin-top:8px; width:100%; padding:8px 0; font-size:12px; border-color:var(--line); color:var(--muted);">로그아웃</button>
       </div>
     </aside>
-    <main style="flex:1; padding:24px 28px; overflow-y:auto; position:relative; z-index:1; min-height:0;">
+    <main id="mainScroll" style="flex:1; padding:24px 28px; overflow-y:auto; position:relative; z-index:1; min-height:0;">
       <div class="fade-up" id="tabContent">${renderTab()}</div>
     </main>
   </div>`;
