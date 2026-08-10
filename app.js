@@ -1,5 +1,5 @@
 /* ============================================================================
-   보안국 인트라넷 — 백엔드 API 연동 + 법률 계산기 + RP 보고서 통합 버전
+   경찰청 인트라넷 — 백엔드 API 연동 + 법률 계산기 + RP 보고서 통합 버전
    (계급별 등급 분류 및 권한 관리 시스템 적용)
    ============================================================================ */
 
@@ -24,9 +24,9 @@ let LAST_SNAPSHOT = null; // 마지막으로 렌더링한 데이터의 스냅샷
 
 // 계급에 따른 등급 분류 헬퍼 함수
 function getRankCategory(rank) {
-  if (["처장"].includes(rank)) return "임원직 간부";
-  if (["교육원장", "차관보", "관리관", "이사관", "비서실장"].includes(rank)) return "고위직 간부";
-  if (["부이사관", "서기관", "사무관", "주사"].includes(rank)) return "일반 간부직";
+  if (["처장", "교육원장", "차관보", "관리관", "이사관", "비서실장"].includes(rank)) return "고위직";
+  if (["부이사관", "서기관", "사무관", "주사"].includes(rank)) return "간부직";
+  if (["주사보", "서기", "서기보", "1등급", "2등급"].includes(rank)) return "일반직";
   return "일반직";
 }
 
@@ -82,7 +82,7 @@ const LAW_DATA = [
   { category: "건물 알피", name: "빈집털이", fine: "40,000,000원", detention: "5분", process: "공표 허가 -> 벨 울림 -> 사이드공지 2회 -> 무력진압 3회", etc: "경관 재량 무기 압수" },
   { category: "건물 알피", name: "북부은행", fine: "150,000,000원", detention: "25분", process: "공표 허가 -> 벨 울림 -> 사이드공지 2회 -> 무력진압 3회", etc: "구금 최소 10분" },
   { category: "건물 알피", name: "닭공장 털이", fine: "200,000,000원", detention: "20분", process: "공표 허가 -> 벨 울림 -> 사이드공지 2회 -> 무력진압 3회", etc: "무기 압수 필수 / 구금 최소 10분 / 금지자리 필수 확인" },
-  { category: "건물 알피", name: "중부 보안국 털이", fine: "200,000,000원", detention: "40분", process: "공표 허가 -> 벨 울림 -> 사이드공지 2회 -> 무력진압 3회", etc: "인원 +2 / 구금 최소 10분" },
+  { category: "건물 알피", name: "중부 경찰청 털이", fine: "200,000,000원", detention: "40분", process: "공표 허가 -> 벨 울림 -> 사이드공지 2회 -> 무력진압 3회", etc: "인원 +2 / 구금 최소 10분" },
   { category: "차량 알피", name: "도주", fine: "150,000,000원", detention: "10분", process: "PM 3회 -> 미 정차 -> 2분내로 도주자 등록 / 위치 추적 가능", etc: "무기 압수 필수 / 범위 이탈 도주자 사격 금지" },
   { category: "차량 알피", name: "수배", fine: "300,000,000원", detention: "20분", process: "미 출석 -> 수배 시작 사이드 공지 / 위치 추적 가능", etc: "무기 압수 필수 / 수배 참여자 2억원 구금 15분 무기 압수" },
   { category: "차량 알피", name: "긴급수배", fine: "300,000,000원", detention: "20분", process: "수배 시작 사이드 공지 / 위치 추적 가능", etc: "차량 탈취(운행), 공무원(살인, 폭행, 차량파손) 시 출석 없이 목격 5분 이내" },
@@ -249,7 +249,7 @@ function genFactionCode() {
 const LOGO_URL = "https://cdn.discordapp.com/attachments/1531501210610434168/1536237644843982888/8D4AAAAASUVORK5CYII.png?ex=6a7aac4c&is=6a795acc&hm=68f874315d648df6b51ad41a2ee748aeddb8f6c7d930768b3d17a21a3180d580";
 
 function sealSvg(size) {
-  return `<img src="${LOGO_URL}" alt="보안국 로고" class="bureau-logo-img" crossorigin="anonymous" style="width:${size}px; height:${size}px;" />`;
+  return `<img src="${LOGO_URL}" alt="경찰청 로고" class="bureau-logo-img" crossorigin="anonymous" style="width:${size}px; height:${size}px;" />`;
 }
 
 function logout() {
@@ -343,7 +343,7 @@ function authWrap(inner) {
     <div class="fade-up panel" style="width:100%; max-width:420px; padding:40px 36px; position:relative; z-index:1; border-radius:var(--radius-lg); box-shadow:var(--shadow-lg);">
       <div style="display:flex; flex-direction:column; align-items:center; margin-bottom:26px;">
         ${sealSvg(80)}
-        <div class="disp" style="font-size:22px; font-weight:700; margin-top:14px; letter-spacing:-0.02em; color:var(--text);">보안국 인트라넷</div>
+        <div class="disp" style="font-size:22px; font-weight:700; margin-top:14px; letter-spacing:-0.02em; color:var(--text);">경찰청 인트라넷</div>
         <div class="mono" style="font-size:11px; color:var(--muted); margin-top:4px; letter-spacing:0.06em;">ⓒ2026</div>
       </div>
       ${inner}
@@ -365,7 +365,7 @@ function renderCreate() {
   return authWrap(`
     <form data-action="submit-create">
       <div class="mono" style="font-size:11.5px; font-weight:600; color:var(--muted); margin-bottom:16px;">새 팩션 만들기</div>
-      <div class="field"><label>팩션 이름</label><input id="cfName" style="width:100%;" placeholder="예) 보안국" /></div>
+      <div class="field"><label>팩션 이름</label><input id="cfName" style="width:100%;" placeholder="예) 경찰청" /></div>
       <div class="field" style="margin-top:14px;"><label>설립자 이름</label><input id="cfFounderName" style="width:100%;" /></div>
       <div class="field" style="margin-top:14px;"><label>설립자 고유번호</label><input id="cfBadge" class="mono" style="width:100%;" placeholder="예) 0001" /></div>
       <div class="field" style="margin-top:14px;"><label>로그인 아이디</label><input id="cfUser" style="width:100%;" autocomplete="username" /></div>
@@ -446,12 +446,6 @@ function renderSessionBox() {
 }
 
 function renderShell(tabs) {
-  // height:100vh(고정) + overflow:hidden 으로 바깥 컨테이너 높이를 화면에 고정한다.
-  // (기존에는 min-height:100vh 였는데, 탭 내용이 길어지면(예: 사이드 공지 목록)
-  //  컨테이너 자체가 내용 높이만큼 늘어나고, aside가 align-items:stretch로
-  //  그 늘어난 높이에 맞춰 같이 늘어나면서 하단의 이름/출근하기/로그아웃 패널이
-  //  화면 밖으로 밀려나는 버그가 있었다. main에만 overflow-y:auto + min-height:0을
-  //  줘서 내용이 길 때 가운데 영역만 스크롤되고 사이드바는 항상 고정 높이를 유지하도록 수정.)
   return `
   <div style="height:100vh; display:flex; position:relative; background:var(--bg); overflow:hidden;">
     <aside class="panel" style="width:230px; margin:16px 0 16px 16px; border-radius:var(--radius-lg); display:flex; flex-direction:column; flex-shrink:0; min-height:0;">
@@ -509,8 +503,6 @@ function statCard(label, value, color) {
   </div>`;
 }
 
-/* ------------------------------ 대시보드 ------------------------------ */
-
 function renderDash() {
   const activeCount = DATA.accounts.filter(a => a.status === "재직").length;
   const pendingApps = DATA.applications.filter(a => a.status === "요청됨").length;
@@ -540,9 +532,6 @@ function renderDash() {
     </div>`;
 }
 
-/* ------------------------------ RP 보고서 탭 ------------------------------ */
-
-// 팩션원별 RP 보고서 작성 건수 집계 (많이 작성한 순)
 function computeRpReportRanking() {
   const totals = {};
   (DATA.rpReports || []).forEach(r => {
@@ -553,7 +542,6 @@ function computeRpReportRanking() {
   return Object.values(totals).sort((a, b) => b.count - a.count);
 }
 
-// RP 보고서 작성 순위 패널 HTML (건수 기준)
 function renderRpRankingPanelHtml(title, limit) {
   const ranking = computeRpReportRanking();
   const list = limit ? ranking.slice(0, limit) : ranking;
@@ -637,8 +625,6 @@ function renderRpReport() {
     <div class="panel">${renderRpReportList()}</div>`;
 }
 
-/* ------------------------------ 법률 계산기 탭 ------------------------------ */
-
 function getLawKey(item) {
   return `${item.category}||${item.name}`;
 }
@@ -655,15 +641,12 @@ function parseDetention(text) {
   return match ? parseInt(match[1], 10) : 0;
 }
 
-// "기타 사항"란에 "구금 최소 N분" 형태로 적힌 최소 구금 시간을 추출.
-// 이 시간은 보석금을 내도 줄일 수 없는 시간이므로 보석금 계산에서 제외한다.
 function parseMinDetention(etcText) {
   if (!etcText) return 0;
   const match = etcText.match(/구금\s*최소\s*(\d+)\s*분/);
   return match ? parseInt(match[1], 10) : 0;
 }
 
-// 보석금 단가: 1분 단축당 5,000,000원
 const BAIL_RATE_PER_MIN = 5000000;
 
 function formatWon(n) { return n.toLocaleString() + " 원"; }
@@ -700,9 +683,6 @@ function renderLawCalc() {
   `;
 }
 
-// 검색/카테고리/선택 상태가 바뀔 때마다 이 부분만 갱신한다.
-// (검색창 자체를 갈아끼우지 않아야 입력 중 포커스/커서 위치가 유지되어
-//  "타이핑이 계속 끊기는" 문제가 발생하지 않는다.)
 function renderLawResults() {
   const query = LAW_SEARCH.trim().toLowerCase();
   const filtered = LAW_DATA.filter(item => {
@@ -715,8 +695,8 @@ function renderLawResults() {
   });
 
   let totalFine = 0, totalDetention = 0, count = 0, excluded = [];
-  let totalMinDetention = 0; // 보석금으로도 줄일 수 없는 최소 구금시간 합계
-  const minDetentionItems = []; // 최소 구금이 있는 선택 항목들 (표시용)
+  let totalMinDetention = 0;
+  const minDetentionItems = [];
   LAW_DATA.forEach(item => {
     const key = getLawKey(item);
     if (LAW_SELECTED.has(key)) {
@@ -734,7 +714,6 @@ function renderLawResults() {
     }
   });
 
-  // 보석금으로 실제 단축 가능한 시간 = 총 구금시간 - 최소 구금시간(단축 불가)
   const bailableMinutes = Math.max(0, totalDetention - totalMinDetention);
   const bailCost = bailableMinutes * BAIL_RATE_PER_MIN;
 
@@ -804,9 +783,6 @@ function renderLawResults() {
   `;
 }
 
-// 검색 입력창을 건드리지 않고 결과 영역만 갱신 + 포커스/커서 위치 보존
-// + 항목 목록(.panel, overflow-y:auto) 자체가 통째로 다시 그려지면서
-//   스크롤이 맨 위로 리셋되는 문제를 막기 위해 스크롤 위치도 함께 보존한다.
 function refreshLawResults() {
   const el = document.getElementById("lawResults");
   if (!el) return;
@@ -819,8 +795,6 @@ function refreshLawResults() {
   const newListPanel = el.querySelector(".panel");
   if (newListPanel) newListPanel.scrollTop = prevScrollTop;
 }
-
-/* ------------------------------ 팩션원 및 근태 관리 ------------------------------ */
 
 function renderMembers() {
   return `
@@ -840,7 +814,7 @@ function renderMembers() {
     <div class="panel" id="memberList">${renderMemberRows(DATA.accounts)}</div>`;
 }
 
-let EDIT_BADGE_ID = null; // 현재 고유번호 인라인 수정 중인 팩션원 id
+let EDIT_BADGE_ID = null;
 
 function getFilteredMembers() {
   const searchEl = document.getElementById("memberSearch");
@@ -849,7 +823,6 @@ function getFilteredMembers() {
   return DATA.accounts.filter(a => a.name.includes(q) || String(a.badge || "").includes(q));
 }
 
-// 검색 필터를 유지한 채로 팩션원 목록만 다시 그린다.
 function refreshMemberList() {
   const listEl = document.getElementById("memberList");
   if (!listEl) return;
@@ -866,7 +839,6 @@ function renderMemberRows(list) {
   if (list.length === 0) { html += `<div style="padding:28px; text-align:center; color:var(--muted); font-size:13.5px;">검색 결과가 없습니다.</div>`; return html; }
 
   list.forEach(a => {
-    // 계급에 따른 등급 분류 추출
     const category = getRankCategory(a.rank);
     let catBadgeColor = "var(--muted)";
     if (category === "임원직 간부") catBadgeColor = "var(--gold)";
@@ -900,19 +872,12 @@ function renderMemberRows(list) {
   return html;
 }
 
-/* ------------------------------ 근태 총시간 순위 계산 유틸 ------------------------------ */
-
-// 시간 문자열을 Date로 파싱
-// 서버는 이제 ISO 8601(new Date().toISOString())로 저장하지만, 과거에 저장된
-// "2026. 8. 8. 오후 3:45:00" 형식(toLocaleString('ko-KR')) 레코드도 함께 지원한다.
 function parseKoreanDateTime(str) {
   if (!str) return null;
 
-  // 1) ISO 8601 등 표준 형식 우선 시도 (서버가 현재 저장하는 형식)
   const iso = new Date(str);
   if (!isNaN(iso.getTime())) return iso;
 
-  // 2) 과거 한국어 로케일 형식 fallback
   const m = String(str).match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(오전|오후)\s*(\d{1,2}):(\d{2}):(\d{2})/);
   if (!m) return null;
   const [, y, mo, d, ampm, hRaw, mi, s] = m;
@@ -922,7 +887,6 @@ function parseKoreanDateTime(str) {
   return new Date(parseInt(y, 10), parseInt(mo, 10) - 1, parseInt(d, 10), h, parseInt(mi, 10), parseInt(s, 10));
 }
 
-// 화면에 사람이 읽기 좋은 한국어 형식으로 표시 (브라우저는 항상 풀 ICU를 갖고 있어 안전)
 function formatDisplayDateTime(str) {
   const d = parseKoreanDateTime(str);
   return d ? d.toLocaleString('ko-KR') : (str || "-");
@@ -934,7 +898,6 @@ function formatWorkMinutes(mins) {
   return `${h}시간 ${m}분`;
 }
 
-// 팩션원별 누적 근무시간 계산 (퇴근하지 않은 근무는 현재 시각까지 실시간 반영)
 function computeAttendanceRanking() {
   const totals = {};
   DATA.attendance.forEach(log => {
@@ -951,7 +914,6 @@ function computeAttendanceRanking() {
   return Object.values(totals).sort((a, b) => b.minutes - a.minutes);
 }
 
-// 근무 총시간 순위 패널 HTML (대시보드/근태 관리 탭에서 공용으로 사용)
 function renderRankingPanelHtml(title, limit) {
   const ranking = computeAttendanceRanking();
   const list = limit ? ranking.slice(0, limit) : ranking;
@@ -978,10 +940,6 @@ function renderRankingPanelHtml(title, limit) {
   return html;
 }
 
-// 팩션원 한 명의 최신 출퇴근 기록을 찾는다.
-// - 현재 근무 중(퇴근 기록 없음)인 로그가 있으면 그걸 우선 사용
-// - 없으면 가장 최근에 완료된(퇴근한) 로그를 사용
-// - user_id가 없는 옛날 기록은 이름+고유번호로 매칭해서 함께 포함시킨다.
 function findMemberLatestLog(acc) {
   const memberLogs = DATA.attendance.filter(log => {
     if (log.user_id != null) return String(log.user_id) === String(acc.id);
@@ -1016,7 +974,6 @@ function renderAttendance() {
   if (DATA.accounts.length === 0) {
     html += `<div style="padding:28px; text-align:center; color:var(--muted); font-size:13.5px;">등록된 팩션원이 없습니다.</div>`;
   } else {
-    // 근무 중인 사람이 위로 오도록 정렬, 그 다음은 이름순
     const rows = DATA.accounts.map(acc => {
       const { log, isWorking } = findMemberLatestLog(acc);
       return { acc, log, isWorking };
@@ -1039,8 +996,6 @@ function renderAttendance() {
   html += `</div>`;
   return html;
 }
-
-/* ------------------------------ 사이드 공지 탭 (검색 기능 포함) ------------------------------ */
 
 function renderNoticeList(notices, canManage) {
   if (notices.length === 0) {
@@ -1082,7 +1037,7 @@ function renderNotices() {
   const createFormHtml = canManage ? `
     <div class="panel" style="padding:18px; margin-bottom:22px; display:flex; gap:12px; flex-direction:column;">
       <div class="field"><label>새 공지 제목 (예: 서부 ATM)</label><input id="snTitle" placeholder="제목 입력" style="width:100%; max-width:420px;"/></div>
-      <div class="field"><label>복사될 내용 (클립보드 양식)</label><textarea id="snContent" placeholder="/보안국 [ 젤리 보안국 ] 서부 ATM에서..." style="width:100%; min-height:85px;"></textarea></div>
+      <div class="field"><label>복사될 내용 (클립보드 양식)</label><textarea id="snContent" placeholder="/경찰청 [ 젤리 경찰청 ] 서부 ATM에서..." style="width:100%; min-height:85px;"></textarea></div>
       <button data-action="submit-notice" class="btn-gold" style="align-self:flex-start;">공지 추가</button>
     </div>` : "";
 
@@ -1262,10 +1217,6 @@ function renderSettings() {
     </div>`;
 }
 
-/* ============================================================================
-   로고 색상 자동 추출 기반 UI 컬러 테마
-   ============================================================================ */
-
 function hslCss(h, s, l) { return `hsl(${h.toFixed(1)}, ${Math.max(0, s).toFixed(1)}%, ${Math.max(0, Math.min(100, l)).toFixed(1)}%)`; }
 
 function rgbToHsl(r, g, b) {
@@ -1286,18 +1237,13 @@ function rgbToHsl(r, g, b) {
   return { h, s: s * 100, l: l * 100 };
 }
 
-// 로고 이미지를 캔버스에 그려 픽셀을 읽고, 채도가 있는(회색/흰색/검정이 아닌)
-// 픽셀들의 평균 색상으로부터 대표 색조(hue)와 채도를 뽑아낸다.
-// - 알파값이 낮은(투명) 픽셀은 배경으로 간주해 제외
-// - 너무 밝거나(거의 흰색) 너무 어두운(거의 검정) 픽셀도 로고의 "테두리/그림자"일
-//   가능성이 높아 제외 -> 실제 로고 고유색에 가깝게 뽑히도록 함
 function extractDominantColor(imgUrl) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
       try {
-        const size = 48; // 다운샘플링(속도 + 노이즈 감소)
+        const size = 48;
         const canvas = document.createElement("canvas");
         canvas.width = size;
         canvas.height = size;
@@ -1310,10 +1256,9 @@ function extractDominantColor(imgUrl) {
           const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
           if (a < 128) continue;
           const { h, s, l } = rgbToHsl(r, g, b);
-          if (l > 92 || l < 8) continue;   // 거의 흰색/검정 제외
-          if (s < 12) continue;            // 무채색(회색) 제외 -> 색이 있는 픽셀 위주로 반영
+          if (l > 92 || l < 8) continue;
+          if (s < 12) continue;
 
-          // 색상(hue)은 원형 값이라 단순 평균이 왜곡되므로 각도 평균(circular mean) 사용
           const rad = (h * Math.PI) / 180;
           sumSin += Math.sin(rad) * s;
           sumCos += Math.cos(rad) * s;
@@ -1321,14 +1266,14 @@ function extractDominantColor(imgUrl) {
           weight++;
         }
 
-        if (weight === 0) { resolve(null); return; } // 색이 있는 픽셀을 못 찾음 -> 폴백 사용
+        if (weight === 0) { resolve(null); return; }
 
         let hue = (Math.atan2(sumSin, sumCos) * 180) / Math.PI;
         if (hue < 0) hue += 360;
         const sat = sSum / weight;
         resolve({ hue, sat });
       } catch (e) {
-        reject(e); // 캔버스 픽셀 읽기 실패(CORS 등)
+        reject(e);
       }
     };
     img.onerror = () => reject(new Error("logo image load failed"));
@@ -1336,25 +1281,21 @@ function extractDominantColor(imgUrl) {
   });
 }
 
-// 뽑아낸 hue/saturation으로 --gold, --bg, --panel 등 CSS 변수 팔레트를 생성해 적용.
-// 이미지 분석이 실패하면(CORS 차단, 로드 실패 등) 기본 블루 팔레트로 안전하게 폴백.
 async function applyThemeFromLogo() {
-  let accentHue = 213;   // 폴백: 기본 블루
+  let accentHue = 213;
   let accentSat = 88;
 
   try {
     const result = await extractDominantColor(LOGO_URL);
     if (result) {
       accentHue = result.hue;
-      // 채도가 너무 낮으면(로고가 흑백/무채색에 가까우면) UI가 칙칙해지므로 최소값 보정
       accentSat = Math.max(60, Math.min(92, result.sat));
     }
   } catch (e) {
-    // 분석 실패 시 폴백 블루 유지 (콘솔에만 남기고 UI엔 영향 없음)
     console.warn("로고 색상 자동 추출 실패, 기본 테마로 대체합니다:", e.message);
   }
 
-  const steelHue = (accentHue + 20) % 360; // 포인트 컬러 대비 살짝 다른 보조 톤
+  const steelHue = (accentHue + 20) % 360;
 
   const gold = hslCss(accentHue, accentSat, 62);
   const gold2 = hslCss(accentHue, accentSat, 50);
@@ -1380,10 +1321,6 @@ async function applyThemeFromLogo() {
   root.setProperty("--steel", steel);
 }
 
-/* ============================================================================
-   이벤트 위임
-   ============================================================================ */
-
 const CLICK_ACTIONS = {
   "goto-create": () => { VIEW = "create"; render(); },
   "goto-join": () => { VIEW = "join"; render(); },
@@ -1399,8 +1336,6 @@ const CLICK_ACTIONS = {
 
   "logout": () => logout(),
 
-  // 카테고리/선택 관련 클릭은 검색 입력창을 다시 그리지 않도록
-  // 탭 전체(refreshTab)가 아니라 결과 영역(#lawResults)만 갱신한다.
   "law-cat": (el) => {
     LAW_CAT = el.dataset.cat;
     document.querySelectorAll('[data-action="law-cat"]').forEach(btn => {
@@ -1524,7 +1459,6 @@ const CLICK_ACTIONS = {
       const acc = DATA.accounts.find(a => String(a.id) === String(id));
       if (acc) acc.badge = newBadge;
     } catch (e) {
-      // 실패 시 편집 모드 유지하지 않고 원래 값으로 되돌림 (apiCall이 이미 에러 토스트를 띄움)
     } finally {
       EDIT_BADGE_ID = null;
       refreshMemberList();
@@ -1672,7 +1606,6 @@ const SUBMIT_ACTIONS = {
     try {
       await apiCall("/rp-reports", "POST", { location, targetFaction, result, content });
       showToast("RP 보고서가 디스코드로 전송되었습니다!", "ok");
-      // 새로 저장된 보고서를 목록/순위에 즉시 반영 (탭 전체가 다시 그려지며 입력폼도 초기화됨)
       await fetchFactionData();
     } catch (e) { }
   }
@@ -1686,12 +1619,11 @@ const CHANGE_ACTIONS = {
     try {
       await apiCall(`/members/${id}/rank`, "PATCH", { rank: newRank });
       showToast("계급이 변경되었습니다");
-      // 서버 재조회 없이 로컬 데이터만 갱신 (불필요한 네트워크 왕복 제거)
       const acc = DATA.accounts.find(a => String(a.id) === String(id));
       if (acc) acc.rank = newRank;
       refreshTab();
     } catch (e) {
-      if (prevRank) el.value = prevRank; // 실패 시 이전 값으로 복구
+      if (prevRank) el.value = prevRank;
     }
   },
   "toggle-permission": async (el) => {
@@ -1712,7 +1644,7 @@ const CHANGE_ACTIONS = {
         }
       }
     } catch (e) {
-      el.checked = !isGranted; // 실패 시 원래 상태로 복구
+      el.checked = !isGranted;
     }
   }
 };
@@ -1722,12 +1654,10 @@ const INPUT_ACTIONS = {
     refreshMemberList();
   },
   "law-search": (el) => {
-    // 결과 영역만 갱신하고 검색창 자체(el)는 건드리지 않는다 -> 포커스/커서 유지
     LAW_SEARCH = el.value;
     refreshLawResults();
   },
   "search-notices": (el) => {
-    // 캐럿(커서) 위치를 보존하기 위해 전체 탭이 아닌 목록 부분만 갱신한다.
     NOTICE_SEARCH = el.value;
     const canManage = hasPermission("notices");
     const filtered = getFilteredNotices();
@@ -1748,15 +1678,11 @@ function initEventDelegation() {
     if (!el || !SUBMIT_ACTIONS[el.dataset.action]) return;
     e.preventDefault();
 
-    // 연속 클릭/중복 제출 방지: 처리 중에는 제출 버튼을 비활성화한다.
-    // (가입 신청 등에서 버튼을 연타하면 요청이 클릭 횟수만큼 중복 전송되는 문제 방지)
     const btn = el.querySelector('button[type="submit"]');
-    if (btn && btn.disabled) return; // 이미 처리 중인 요청
+    if (btn && btn.disabled) return;
     if (btn) btn.disabled = true;
 
     Promise.resolve(SUBMIT_ACTIONS[el.dataset.action](el, e)).finally(() => {
-      // 성공 시 대개 화면이 통째로 다시 그려져 이 버튼 노드는 더 이상 DOM에 없으므로
-      // 여기서 다시 활성화해도 무해하다. 실패 시(같은 폼 유지)에는 재시도할 수 있도록 복구한다.
       if (btn) btn.disabled = false;
     });
   });
@@ -1771,8 +1697,6 @@ function initEventDelegation() {
     INPUT_ACTIONS[el.dataset.action](el, e);
   });
 }
-
-/* ------------------------------ 초기화 ------------------------------ */
 
 (async function init() {
   applyThemeFromLogo();
