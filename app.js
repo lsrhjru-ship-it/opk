@@ -1190,11 +1190,23 @@ function renderAccounts() {
 
 function renderSettings() {
   return `
-    ${header("설정", "팩션 코드 · 디스코드 웹훅 연동")}
+    ${header("설정", "팩션 코드 · 팩션 이름 · 디스코드 웹훅 연동")}
     <div class="panel" style="padding:22px; max-width:540px; margin-bottom:20px;">
       <div class="field"><label>팩션 코드</label></div>
       <div class="code-display" style="font-size:22px; padding:14px 0;">${DATA.code}</div>
       <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:12px;">신규 가입 신청 시 이 코드가 필요합니다.</div>
+    </div>
+    <div class="panel" style="padding:22px; max-width:540px; margin-bottom:20px;">
+      <div class="field">
+        <label>팩션 이름</label>
+        <input id="factionNameInput" style="width:100%; font-size:14px;" placeholder="팩션 이름을 입력하세요" value="${DATA.name || ""}" />
+      </div>
+      <div style="display:flex; gap:10px; margin-top:14px;">
+        <button data-action="save-faction-name" class="btn-gold">저장</button>
+      </div>
+      <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:14px; line-height:1.7;">
+        변경한 이름은 사이드바와 관련 화면에 즉시 반영됩니다.
+      </div>
     </div>
     <div class="panel" style="padding:22px; max-width:540px;">
       <div class="field" style="margin-bottom:14px;">
@@ -1620,6 +1632,25 @@ const CLICK_ACTIONS = {
       await apiCall("/settings/webhook-test", "POST", { webhookUrl });
       showToast("디스코드로 테스트 메시지를 전송했습니다");
     } catch (e) { }
+  },
+
+  // ---- 팩션 이름 변경: 즉시 반영 후 실패 시 롤백 ----
+  "save-faction-name": async () => {
+    const input = document.getElementById("factionNameInput");
+    const newName = input.value.trim();
+    if (!newName) { showToast("팩션 이름을 입력하세요.", "danger"); return; }
+
+    const backup = DATA.name;
+    DATA.name = newName;
+    showToast("팩션 이름이 저장되었습니다");
+    render();
+
+    try {
+      await apiCall("/settings/faction-name", "PATCH", { name: newName });
+    } catch (e) {
+      DATA.name = backup;
+      render();
+    }
   },
 };
 
