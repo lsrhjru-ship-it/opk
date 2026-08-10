@@ -189,7 +189,7 @@ function genFactionCode() {
 }
 
 function sealSvg(size) {
-  return `<img src="https://cdn.discordapp.com/attachments/1531501210610434168/1536237644843982888/8D4AAAAASUVORK5CYII.png?ex=6a7aac4c&is=6a795acc&hm=68f874315d648df6b51ad41a2ee748aeddb8f6c7d930768b3d17a21a3180d580" alt="보안국 로고" class="bureau-logo-img" style="width:${size}px; height:${size}px;" />`;
+  return `<img src="https://cdn.discordapp.com/attachments/1531501210610434168/1536230110011723867/-1-1.gif?ex=6a7aa548&is=6a7953c8&hm=8f5dc007f13fdcff80fc542dec94ad79cbc8745a610470e3a2e6595ad781c789&" alt="보안국 로고" class="bureau-logo-img" style="width:${size}px; height:${size}px;" />`;
 }
 
 function logout() {
@@ -1098,6 +1098,122 @@ function renderSettings() {
 }
 
 /* ============================================================================
+   로고 기반 자동 UI 컬러 테마
+   ============================================================================ */
+
+const THEME_CACHE_KEY = "bureau_theme_hsl";
+
+// RGB -> HSL 변환
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h, s, l = (max + min) / 2;
+  if (max === min) { h = s = 0; }
+  else {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+  return [h * 360, s * 100, l * 100];
+}
+
+function hslCss(h, s, l) { return `hsl(${h.toFixed(1)}, ${Math.max(0, s).toFixed(1)}%, ${Math.max(0, Math.min(100, l)).toFixed(1)}%)`; }
+
+// 로고 이미지에서 가장 특징적인(채도 높고 극단적이지 않은 밝기의) 색을 뽑아낸다.
+// 캔버스에 축소해서 그린 뒤, 비슷한 색끼리 버킷으로 묶어 가장 많이 등장한 색을 대표색으로 채택.
+function extractDominantColor(img) {
+  const size = 48;
+  const canvas = document.createElement("canvas");
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0, size, size);
+
+  let data;
+  try {
+    data = ctx.getImageData(0, 0, size, size).data;
+  } catch (e) {
+    // 로고가 다른 도메인에서 CORS 없이 서빙되어 캔버스 픽셀을 읽을 수 없는 경우
+    return null;
+  }
+
+  const buckets = {};
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < 200) continue; // 투명 픽셀 제외
+    const [h, s, l] = rgbToHsl(data[i], data[i + 1], data[i + 2]);
+    // 그림자/하이라이트/거의 무채색인 픽셀은 대표색 후보에서 제외
+    if (l < 12 || l > 88 || s < 12) continue;
+    const key = `${Math.round(h / 12)}_${Math.round(s / 20)}_${Math.round(l / 20)}`;
+    if (!buckets[key]) buckets[key] = { count: 0, h: 0, s: 0, l: 0 };
+    buckets[key].count++;
+    buckets[key].h += h; buckets[key].s += s; buckets[key].l += l;
+  }
+
+  let best = null;
+  Object.values(buckets).forEach(b => { if (!best || b.count > best.count) best = b; });
+  if (!best) return null;
+
+  return { h: best.h / best.count, s: best.s / best.count, l: best.l / best.count };
+}
+
+// 대표색(hue 중심)을 기준으로 전체 UI 팔레트를 구성해 CSS 변수로 반영한다.
+function applyPaletteFromDominant(dom) {
+  const h = dom.h;
+  const s = Math.min(85, Math.max(45, dom.s));
+  const goldL = Math.min(70, Math.max(45, dom.l));
+
+  const gold = hslCss(h, s, goldL);
+  const bg = hslCss(h, Math.min(30, s * 0.35), 7);
+  const panel = hslCss(h, Math.min(26, s * 0.3), 10.5);
+  const panel2 = hslCss(h, Math.min(24, s * 0.28), 13.5);
+  const line = hslCss(h, Math.min(22, s * 0.25), 20);
+  const muted = hslCss(h, Math.min(12, s * 0.15), 58);
+  const text = hslCss(h, Math.min(8, s * 0.08), 94);
+  const steelHue = (h + 190) % 360; // 포인트색과 대비되는 보조색(보색 근처)
+  const steel = hslCss(steelHue, Math.min(55, s), 62);
+
+  const root = document.documentElement.style;
+  root.setProperty("--gold", gold);
+  root.setProperty("--bg", bg);
+  root.setProperty("--panel", panel);
+  root.setProperty("--panel2", panel2);
+  root.setProperty("--line", line);
+  root.setProperty("--muted", muted);
+  root.setProperty("--text", text);
+  root.setProperty("--steel", steel);
+
+  localStorage.setItem(THEME_CACHE_KEY, JSON.stringify({ h: dom.h, s: dom.s, l: dom.l }));
+}
+
+// 페이지 로드 즉시(이미지 분석을 기다리지 않고) 이전에 계산해둔 색상을 먼저 적용해
+// 매번 기본 테마 → 로고색으로 바뀌는 깜빡임을 없앤다.
+function applyCachedThemeIfAny() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(THEME_CACHE_KEY) || "null");
+    if (cached) applyPaletteFromDominant(cached);
+  } catch (e) { }
+}
+
+function initLogoTheme() {
+  applyCachedThemeIfAny();
+
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => {
+    const dom = extractDominantColor(img);
+    if (dom) applyPaletteFromDominant(dom);
+    // 실패 시(예: CORS 차단) 캐시된 값 또는 CSS 기본값이 그대로 유지됨
+  };
+  img.onerror = () => { };
+  // sealSvg()에서 쓰는 로고와 동일한 이미지를 사용
+  img.src = "https://cdn.discordapp.com/attachments/1531501210610434168/1536230110011723867/-1-1.gif?ex=6a7aa548&is=6a7953c8&hm=8f5dc007f13fdcff80fc542dec94ad79cbc8745a610470e3a2e6595ad781c789&";
+}
+
+/* ============================================================================
    이벤트 위임
    ============================================================================ */
 
@@ -1457,6 +1573,7 @@ function initEventDelegation() {
 /* ------------------------------ 초기화 ------------------------------ */
 
 (async function init() {
+  initLogoTheme();
   initEventDelegation();
   if (TOKEN && SESSION) {
     await fetchFactionData();
