@@ -793,6 +793,26 @@ function renderMembers() {
     <div class="panel" id="memberList">${renderMemberRows(DATA.accounts)}</div>`;
 }
 
+let EDIT_BADGE_ID = null; // 현재 고유번호 인라인 수정 중인 팩션원 id
+
+function getFilteredMembers() {
+  const searchEl = document.getElementById("memberSearch");
+  const q = searchEl ? searchEl.value.trim() : "";
+  if (!q) return DATA.accounts;
+  return DATA.accounts.filter(a => a.name.includes(q) || String(a.badge || "").includes(q));
+}
+
+// 검색 필터를 유지한 채로 팩션원 목록만 다시 그린다.
+function refreshMemberList() {
+  const listEl = document.getElementById("memberList");
+  if (!listEl) return;
+  listEl.innerHTML = renderMemberRows(getFilteredMembers());
+  if (EDIT_BADGE_ID) {
+    const input = document.getElementById(`badgeInput_${EDIT_BADGE_ID}`);
+    if (input) { input.focus(); input.select(); }
+  }
+}
+
 function renderMemberRows(list) {
   const cols = "1.8fr 0.7fr 0.8fr 0.8fr 1fr 0.8fr";
   let html = `<div class="table-head" style="grid-template-columns:${cols};"><span>이름</span><span>고유번호</span><span>계급/분류</span><span>상태</span><span>가입일</span><span></span></div>`;
@@ -811,7 +831,15 @@ function renderMemberRows(list) {
         ${a.name}
         <span style="font-size:10px; font-weight:700; color:${catBadgeColor}; border:1px solid ${catBadgeColor}; border-radius:4px; padding:1px 5px; line-height:1.5; white-space:nowrap;">${category}</span>
       </span>
-      <span class="mono" style="color:var(--gold); font-weight:600;">${formatBadge(a.badge)}</span>
+      <span class="mono" style="color:var(--gold); font-weight:600;">${
+        a.id === EDIT_BADGE_ID
+          ? `<span style="display:flex; align-items:center; gap:4px;">
+               <input id="badgeInput_${a.id}" class="mono" value="${a.badge != null ? a.badge : ""}" style="width:64px; padding:3px 6px; font-size:12px;" onkeydown="if(event.key==='Enter'){this.nextElementSibling.click();}else if(event.key==='Escape'){this.nextElementSibling.nextElementSibling.click();}" />
+               <button data-action="save-badge" data-id="${a.id}" class="btn-ghost" style="padding:2px 6px; font-size:11px;">저장</button>
+               <button data-action="cancel-badge-edit" class="btn-ghost" style="padding:2px 6px; font-size:11px;">✕</button>
+             </span>`
+          : `<span data-action="edit-badge" data-id="${a.id}" style="cursor:pointer; border-bottom:1px dashed var(--gold);" title="클릭해서 고유번호 수정">${formatBadge(a.badge)}</span>`
+      }</span>
       <div style="display:flex; flex-direction:column; gap:4px;">
         <select data-action="change-rank" data-id="${a.id}" style="padding:4px 6px; font-size:12px; width:100%;">
           ${RANKS.map(r => `<option value="${r}" ${r === a.rank ? "selected" : ""}>${r}</option>`).join("")}
@@ -1430,6 +1458,31 @@ const CLICK_ACTIONS = {
       refreshTab();
     } catch (e) { }
   },
+  "edit-badge": (el) => {
+    EDIT_BADGE_ID = el.dataset.id;
+    refreshMemberList();
+  },
+  "cancel-badge-edit": () => {
+    EDIT_BADGE_ID = null;
+    refreshMemberList();
+  },
+  "save-badge": async (el) => {
+    const id = el.dataset.id;
+    const input = document.getElementById(`badgeInput_${id}`);
+    const newBadge = input ? input.value.trim() : "";
+    if (!newBadge) { showToast("고유번호를 입력하세요", "danger"); return; }
+    try {
+      await apiCall(`/members/${id}/badge`, "PATCH", { badge: newBadge });
+      showToast("고유번호가 변경되었습니다");
+      const acc = DATA.accounts.find(a => String(a.id) === String(id));
+      if (acc) acc.badge = newBadge;
+    } catch (e) {
+      // 실패 시 편집 모드 유지하지 않고 원래 값으로 되돌림 (apiCall이 이미 에러 토스트를 띄움)
+    } finally {
+      EDIT_BADGE_ID = null;
+      refreshMemberList();
+    }
+  },
   "decide-app": async (el) => {
     const status = el.dataset.status;
     try {
@@ -1619,9 +1672,7 @@ const CHANGE_ACTIONS = {
 
 const INPUT_ACTIONS = {
   "search-members": (el) => {
-    const q = el.value;
-    const list = DATA.accounts.filter(a => a.name.includes(q) || String(a.badge || "").includes(q));
-    document.getElementById("memberList").innerHTML = renderMemberRows(list);
+    refreshMemberList();
   },
   "law-search": (el) => {
     // 결과 영역만 갱신하고 검색창 자체(el)는 건드리지 않는다 -> 포커스/커서 유지
