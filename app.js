@@ -1034,8 +1034,8 @@ function renderNotices() {
 
   const createFormHtml = canManage ? `
     <div class="panel" style="padding:18px; margin-bottom:22px; display:flex; gap:12px; flex-direction:column;">
-      <div class="field"><label>새 공지 제목 (예: 서부 ATM)</label><input id="snTitle" placeholder="제목 입력" style="width:100%; max-width:420px;"/></div>
-      <div class="field"><label>복사될 내용 (클립보드 양식)</label><textarea id="snContent" placeholder="/경찰청 [ 젤리 경찰청 ] 서부 ATM에서..." style="width:100%; min-height:85px;"></textarea></div>
+      <div class="field"><label>새 공지 제목 (예: 보석상)</label><input id="snTitle" placeholder="제목 입력" style="width:100%; max-width:420px;"/></div>
+      <div class="field"><label>복사될 내용 (클립보드 양식)</label><textarea id="snContent" placeholder="/경찰청 [ 젤리 경찰청 ] 보석상에서..." style="width:100%; min-height:85px;"></textarea></div>
       <button data-action="submit-notice" class="btn-gold" style="align-self:flex-start;">공지 추가</button>
     </div>` : "";
 
