@@ -142,7 +142,11 @@ async function apiCall(endpoint, method = "GET", body = null) {
   try {
     const res = await fetch(`${API_BASE}${endpoint}`, config);
     const result = await res.json();
-    if (!res.ok) throw new Error(result.message || "서버 통신 중 오류가 발생했습니다.");
+    if (!res.ok) {
+      const err = new Error(result.message || "서버 통신 중 오류가 발생했습니다.");
+      err.status = res.status; // 401/403(인증 만료)인지, 그 외 일시적 오류인지 구분하기 위함
+      throw err;
+    }
     return result;
   } catch (err) {
     showToast(err.message, "danger");
@@ -190,7 +194,13 @@ async function fetchFactionData() {
       if (isFirstLoad) render(); else silentSync();
     }
   } catch (e) {
-    logout();
+    // 토큰 만료/무효(401·403)일 때만 로그아웃한다.
+    // 그 외(네트워크 순간 끊김, 서버 일시 오류 등)에는 로그아웃하지 않고
+    // 다음 폴링 주기(15초 뒤)에 다시 시도한다 — 예전에는 어떤 오류든
+    // 무조건 로그아웃시켜서 접속 중에 가끔씩 튕기는 원인이었다.
+    if (e.status === 401 || e.status === 403) {
+      logout();
+    }
   }
 }
 
@@ -1033,11 +1043,11 @@ function renderNotices() {
   const filtered = getFilteredNotices();
 
   const createFormHtml = canManage ? `
-    <div class="panel" style="padding:18px; margin-bottom:22px; display:flex; gap:12px; flex-direction:column;">
+    <form data-action="submit-notice" class="panel" style="padding:18px; margin-bottom:22px; display:flex; gap:12px; flex-direction:column;">
       <div class="field"><label>새 공지 제목 (예: 보석상)</label><input id="snTitle" placeholder="제목 입력" style="width:100%; max-width:420px;"/></div>
       <div class="field"><label>복사될 내용 (클립보드 양식)</label><textarea id="snContent" placeholder="/경찰청 [ 젤리 경찰청 ] 보석상에서..." style="width:100%; min-height:85px;"></textarea></div>
-      <button data-action="submit-notice" class="btn-gold" style="align-self:flex-start;">공지 추가</button>
-    </div>` : "";
+      <button type="submit" class="btn-gold" style="align-self:flex-start;">공지 추가</button>
+    </form>` : "";
 
   return `
     ${header("사이드 공지", `복사하여 바로 사용할 수 있는 사전 지정 양식 (전체 ${DATA.sideNotices.length}건${NOTICE_SEARCH.trim() ? ` · 검색결과 ${filtered.length}건` : ""})`)}
@@ -1189,14 +1199,55 @@ function renderAccounts() {
 }
 
 function renderSettings() {
+  const isOwner = !!(SESSION && SESSION.isOwner);
+
+  // ---- 서버(팩션) 이름 변경 ----
+  const nameChangeHtml = `
+    <div class="panel" style="padding:22px; max-width:540px; margin-bottom:20px;">
+      <div class="field"><label>서버(팩션) 이름</label>
+        <input id="factionNameInput" style="width:100%;" value="${DATA.name || ""}" />
+      </div>
+      <button data-action="save-faction-name" class="btn-gold" style="margin-top:12px;">이름 변경</button>
+    </div>`;
+
+  // ---- 소유자 이전 (팩션장만 가능) ----
+  const ownerOptions = (DATA.accounts || [])
+    .filter(a => String(a.id) !== String(SESSION.id))
+    .map(a => `<option value="${a.id}">[${a.rank}] ${a.name}${a.badge ? ` (${formatBadge(a.badge)})` : ""}</option>`)
+    .join("");
+
+  const ownerTransferHtml = isOwner ? `
+    <div class="panel" style="padding:22px; max-width:540px; margin-bottom:20px;">
+      <div class="field"><label>소유자(팩션장) 이전</label></div>
+      <div class="mono" style="font-size:11.5px; color:var(--muted); margin-bottom:10px;">
+        이전하면 본인은 팩션장 권한을 잃습니다. 신중히 선택하세요.
+      </div>
+      <select id="newOwnerSelect" style="width:100%; max-width:420px;">
+        <option value="">-- 새 소유자 선택 --</option>
+        ${ownerOptions}
+      </select>
+      <button data-action="transfer-owner" class="btn-ghost danger" style="margin-top:12px;">소유자 이전</button>
+    </div>` : "";
+
+  // ---- 서버(팩션) 삭제 (팩션장만 가능) ----
+  const deleteFactionHtml = isOwner ? `
+    <div class="panel" style="padding:22px; max-width:540px; margin-bottom:20px; border-color:var(--danger, #c0392b);">
+      <div class="field"><label style="color:var(--danger, #c0392b);">서버(팩션) 삭제</label></div>
+      <div class="mono" style="font-size:11.5px; color:var(--muted); margin-bottom:10px;">
+        이 작업은 되돌릴 수 없습니다. 모든 팩션원, 근태, 공지, 보고서 기록이 함께 삭제됩니다.
+      </div>
+      <button data-action="delete-faction" class="btn-ghost danger">서버 삭제</button>
+    </div>` : "";
+
   return `
     ${header("설정", "팩션 코드 · 디스코드 웹훅 연동")}
+    ${nameChangeHtml}
     <div class="panel" style="padding:22px; max-width:540px; margin-bottom:20px;">
       <div class="field"><label>팩션 코드</label></div>
       <div class="code-display" style="font-size:22px; padding:14px 0;">${DATA.code}</div>
       <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:12px;">신규 가입 신청 시 이 코드가 필요합니다.</div>
     </div>
-    <div class="panel" style="padding:22px; max-width:540px;">
+    <div class="panel" style="padding:22px; max-width:540px; margin-bottom:20px;">
       <div class="field" style="margin-bottom:14px;">
         <label>기본 알림 웹훅 URL (출퇴근 등)</label>
         <input id="webhookUrl" class="mono" style="width:100%; font-size:13px;" placeholder="https://discord.com/api/webhooks/..." value="${DATA.webhookUrl || ""}" />
@@ -1212,7 +1263,9 @@ function renderSettings() {
       <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:16px; line-height:1.7;">
         출퇴근 및 가입 알림은 기본 웹훅으로, RP 보고서는 RP 전용 웹훅으로 전송됩니다.
       </div>
-    </div>`;
+    </div>
+    ${ownerTransferHtml}
+    ${deleteFactionHtml}`;
 }
 
 function hslCss(h, s, l) { return `hsl(${h.toFixed(1)}, ${Math.max(0, s).toFixed(1)}%, ${Math.max(0, Math.min(100, l)).toFixed(1)}%)`; }
@@ -1619,6 +1672,53 @@ const CLICK_ACTIONS = {
     try {
       await apiCall("/settings/webhook-test", "POST", { webhookUrl });
       showToast("디스코드로 테스트 메시지를 전송했습니다");
+    } catch (e) { }
+  },
+
+  // ---- 서버(팩션) 이름 변경 ----
+  "save-faction-name": async () => {
+    const input = document.getElementById("factionNameInput");
+    const newName = input.value.trim();
+    if (!newName) { showToast("이름을 입력하세요.", "danger"); return; }
+    const backup = DATA.name;
+    DATA.name = newName;
+    showToast("서버 이름이 변경되었습니다");
+    refreshTab();
+
+    try {
+      await apiCall("/faction/name", "PATCH", { name: newName });
+    } catch (e) {
+      DATA.name = backup;
+      refreshTab();
+    }
+  },
+
+  // ---- 소유자(팩션장) 이전 ----
+  "transfer-owner": async () => {
+    const select = document.getElementById("newOwnerSelect");
+    const newOwnerId = select.value;
+    if (!newOwnerId) { showToast("새 소유자를 선택하세요.", "danger"); return; }
+    const target = DATA.accounts.find(a => String(a.id) === String(newOwnerId));
+    const targetName = target ? target.name : "선택한 팩션원";
+    if (!confirm(`${targetName} 님에게 소유자 권한을 이전합니다. 이전 후 본인은 팩션장 권한을 잃습니다. 계속하시겠습니까?`)) return;
+
+    try {
+      await apiCall("/faction/owner", "PATCH", { newOwnerId });
+      showToast("소유자가 이전되었습니다");
+      await fetchFactionData(); // 본인 권한이 바뀌었으므로 세션/화면을 서버 기준으로 다시 동기화
+    } catch (e) { }
+  },
+
+  // ---- 서버(팩션) 삭제 ----
+  "delete-faction": async () => {
+    const typed = prompt(`정말 삭제하시려면 팩션 이름 "${DATA.name}"을(를) 정확히 입력하세요. 이 작업은 되돌릴 수 없습니다.`);
+    if (typed === null) return;
+    if (typed !== DATA.name) { showToast("이름이 일치하지 않아 취소되었습니다.", "danger"); return; }
+
+    try {
+      await apiCall("/faction", "DELETE");
+      showToast("서버가 삭제되었습니다");
+      logout();
     } catch (e) { }
   },
 };
