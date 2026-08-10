@@ -155,6 +155,7 @@ async function fetchFactionData() {
   try {
     const res = await apiCall("/faction/data");
     const newData = res.faction;
+    const isFirstLoad = DATA === null; // 아직 셸(화면 껍데기)이 그려지기 전인지 여부
 
     // 본인 계정의 최신 계급/권한을 세션에 동기화 (관리자가 권한을 새로 부여해도
     // 로그아웃 없이 즉시 반영되도록 하기 위함 — 그렇지 않으면 로그인 시점의
@@ -183,7 +184,11 @@ async function fetchFactionData() {
       localStorage.setItem("bureau_session", JSON.stringify(SESSION));
     }
 
-    if (changed) render();
+    if (changed) {
+      // 최초 로드(로그인 직후)만 화면 껍데기를 통째로 그리고,
+      // 그 이후 폴링 갱신은 필요한 부분만 조용히 바꿔치기한다.
+      if (isFirstLoad) render(); else silentSync();
+    }
   } catch (e) {
     logout();
   }
@@ -295,6 +300,40 @@ function refreshTab() {
   document.getElementById("tabContent").innerHTML = renderTab();
 }
 
+// 폴링(백그라운드 자동 새로고침) 전용: 화면 전체(app.innerHTML)를 새로 만들지 않고
+// 바뀔 수 있는 부분(탭 목록 / 이름·계급·출퇴근 버튼 / 본문)만 자리 그대로 갱신한다.
+// render()처럼 껍데기를 통째로 교체하면 진입 애니메이션이 다시 재생되고
+// 열려있던 폼 등이 리셋돼서 "새로고침 티"가 나기 때문에, 이 경로에서는 그걸 피한다.
+function silentSync() {
+  const app = document.getElementById("app");
+  // 아직 로그인 셸이 그려진 적이 없으면(최초 로드 등) 통째로 그리는 수밖에 없다.
+  if (!app || !document.getElementById("tabContent") || !SESSION || !TOKEN || !DATA) {
+    render();
+    return;
+  }
+
+  const activeTabs = getAccessibleTabs();
+  if (!activeTabs.find(t => t.key === TAB)) TAB = "dash";
+
+  const navEl = document.getElementById("navTabs");
+  if (navEl) navEl.innerHTML = renderNavTabs(activeTabs);
+
+  const sessionEl = document.getElementById("sessionBox");
+  if (sessionEl) sessionEl.innerHTML = renderSessionBox();
+
+  const mainScroll = document.getElementById("mainScroll");
+  const scrollTop = mainScroll ? mainScroll.scrollTop : 0;
+
+  const tabEl = document.getElementById("tabContent");
+  if (tabEl) tabEl.innerHTML = renderTab();
+
+  if (mainScroll) mainScroll.scrollTop = scrollTop;
+  if (EDIT_BADGE_ID) {
+    const input = document.getElementById(`badgeInput_${EDIT_BADGE_ID}`);
+    if (input) { input.focus(); input.select(); }
+  }
+}
+
 /* ------------------------------ 로그인 전 화면 ------------------------------ */
 
 function authWrap(inner) {
@@ -390,12 +429,23 @@ function renderLogin() {
 
 /* ------------------------------ 로그인 후 셸/탭 ------------------------------ */
 
-function renderShell(tabs) {
+function renderNavTabs(tabs) {
+  return tabs.map(t => `<button class="tab-btn ${TAB === t.key ? 'active' : ''}" data-action="switch-tab" data-tab="${t.key}">${t.label}</button>`).join("");
+}
+
+function renderSessionBox() {
   const isWorking = DATA.attendance.find(a => a.user_id === SESSION.id && !a.clock_out_time);
   const workBtnHtml = isWorking
     ? `<button data-action="toggle-work" class="btn-ghost danger" style="margin-top:10px; width:100%; padding:9px 0; font-size:12.5px; font-weight:600;">퇴근하기 (근무 중)</button>`
     : `<button data-action="toggle-work" class="btn-ghost ok" style="margin-top:10px; width:100%; padding:9px 0; font-size:12.5px; font-weight:600;">출근하기</button>`;
+  return `
+    <div style="font-size:13.5px; font-weight:700;">${SESSION.name}</div>
+    <div class="mono" style="font-size:11px; color:var(--gold); font-weight:600; margin-top:2px;">${SESSION.rank} · No.${formatBadge(SESSION.badge)}</div>
+    ${workBtnHtml}
+    <button data-action="logout" class="btn-ghost" style="margin-top:8px; width:100%; padding:8px 0; font-size:12px; border-color:var(--line); color:var(--muted);">로그아웃</button>`;
+}
 
+function renderShell(tabs) {
   // height:100vh(고정) + overflow:hidden 으로 바깥 컨테이너 높이를 화면에 고정한다.
   // (기존에는 min-height:100vh 였는데, 탭 내용이 길어지면(예: 사이드 공지 목록)
   //  컨테이너 자체가 내용 높이만큼 늘어나고, aside가 align-items:stretch로
@@ -412,14 +462,11 @@ function renderShell(tabs) {
           <div class="mono" style="font-size:10px; color:var(--muted); font-weight:600;">INTRANET SYS</div>
         </div>
       </div>
-      <nav style="padding:14px; display:flex; flex-direction:column; gap:4px; flex:1; overflow-y:auto; min-height:0;">
-        ${tabs.map(t => `<button class="tab-btn ${TAB === t.key ? 'active' : ''}" data-action="switch-tab" data-tab="${t.key}">${t.label}</button>`).join("")}
+      <nav id="navTabs" style="padding:14px; display:flex; flex-direction:column; gap:4px; flex:1; overflow-y:auto; min-height:0;">
+        ${renderNavTabs(tabs)}
       </nav>
-      <div style="padding:16px; border-top:1px solid var(--line); background:var(--panel2); border-radius:0 0 var(--radius-lg) var(--radius-lg); flex-shrink:0;">
-        <div style="font-size:13.5px; font-weight:700;">${SESSION.name}</div>
-        <div class="mono" style="font-size:11px; color:var(--gold); font-weight:600; margin-top:2px;">${SESSION.rank} · No.${formatBadge(SESSION.badge)}</div>
-        ${workBtnHtml}
-        <button data-action="logout" class="btn-ghost" style="margin-top:8px; width:100%; padding:8px 0; font-size:12px; border-color:var(--line); color:var(--muted);">로그아웃</button>
+      <div id="sessionBox" style="padding:16px; border-top:1px solid var(--line); background:var(--panel2); border-radius:0 0 var(--radius-lg) var(--radius-lg); flex-shrink:0;">
+        ${renderSessionBox()}
       </div>
     </aside>
     <main id="mainScroll" style="flex:1; padding:24px 28px; overflow-y:auto; position:relative; z-index:1; min-height:0;">
