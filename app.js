@@ -763,7 +763,7 @@ function renderMembers() {
     <div id="addMemberForm" class="panel" style="display:none; padding:18px; margin-bottom:18px; gap:12px; align-items:flex-end; flex-wrap:wrap; flex-direction:row;">
       <div class="field"><label>이름</label><input id="mName" /></div>
       <div class="field"><label>고유번호</label><input id="mBadge" class="mono" style="width:110px;" placeholder="14" /></div>
-      <div class="field"><label>계급</label><select id="mRank">${RANKS.map(r => `<option value="${r}" ${r === "교육생" ? "selected" : ""}>${r}</option>`).join("")}</select></div>
+      <div class="field"><label>계급</label><select id="mRank" style="border-radius:var(--radius-sm);">${RANKS.map(r => `<option value="${r}" ${r === "교육생" ? "selected" : ""}>${r}</option>`).join("")}</select></div>
       <button data-action="submit-member" class="btn-gold">등록</button>
     </div>
     <div class="panel" style="display:flex; align-items:center; gap:8px; margin-bottom:14px; padding:6px 14px; max-width:280px;">
@@ -1079,7 +1079,7 @@ function renderWarn() {
       </div>
       <div class="field"><label>사유</label><input id="wReason" style="width:280px;" placeholder="경고 사유 입력" /></div>
       <div class="field"><label>수위</label>
-        <select id="wSeverity"><option>경고</option><option>중경고</option><option>최종경고</option></select>
+        <select id="wSeverity" style="border-radius:var(--radius-sm);"><option>경고</option><option>중경고</option><option>최종경고</option></select>
       </div>
       <button data-action="submit-warn" class="btn-gold">등록</button>
     </div>
@@ -1629,7 +1629,18 @@ function initEventDelegation() {
     const el = e.target.closest("[data-action]");
     if (!el || !SUBMIT_ACTIONS[el.dataset.action]) return;
     e.preventDefault();
-    SUBMIT_ACTIONS[el.dataset.action](el, e);
+
+    // 연속 클릭/중복 제출 방지: 처리 중에는 제출 버튼을 비활성화한다.
+    // (가입 신청 등에서 버튼을 연타하면 요청이 클릭 횟수만큼 중복 전송되는 문제 방지)
+    const btn = el.querySelector('button[type="submit"]');
+    if (btn && btn.disabled) return; // 이미 처리 중인 요청
+    if (btn) btn.disabled = true;
+
+    Promise.resolve(SUBMIT_ACTIONS[el.dataset.action](el, e)).finally(() => {
+      // 성공 시 대개 화면이 통째로 다시 그려져 이 버튼 노드는 더 이상 DOM에 없으므로
+      // 여기서 다시 활성화해도 무해하다. 실패 시(같은 폼 유지)에는 재시도할 수 있도록 복구한다.
+      if (btn) btn.disabled = false;
+    });
   });
   app.addEventListener("change", (e) => {
     const el = e.target.closest("[data-action]");
