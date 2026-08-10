@@ -15,6 +15,10 @@ let TAB = "dash";
 let VIEW = "gate";
 let LAST = {};
 
+// 자동 새로고침(폴링) 설정
+const POLL_INTERVAL_MS = 15000; // 15초마다 서버 데이터 재조회
+let pollTimer = null;
+
 /* ------------------------------ 계급 및 권한 유틸 ------------------------------ */
 
 // 계급에 따른 등급 분류 헬퍼 함수
@@ -173,6 +177,43 @@ async function fetchFactionData() {
   }
 }
 
+/* ------------------------------ 자동 새로고침(폴링) ------------------------------ */
+
+// 사용자가 입력 중인 요소(검색창, 폼 필드 등)에 포커스가 있으면
+// 폴링으로 인한 전체 재렌더링이 타이핑을 방해하지 않도록 건너뛴다.
+function isUserTyping() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+}
+
+async function pollTick() {
+  if (!TOKEN || !SESSION) { stopPolling(); return; }
+  if (document.hidden) return; // 탭이 백그라운드면 건너뜀
+  if (isUserTyping()) return;  // 입력 중이면 건너뜀 (포커스/커서 보존)
+  await fetchFactionData();
+}
+
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(pollTick, POLL_INTERVAL_MS);
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+// 탭이 다시 보이게 되는 순간 즉시 한 번 최신화 (백그라운드에 머무는 동안 놓친 변경 반영)
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && TOKEN && SESSION && !isUserTyping()) {
+    fetchFactionData();
+  }
+});
+
 function showToast(msg, kind) {
   const el = document.getElementById("toast");
   if (!el) return;
@@ -195,6 +236,7 @@ function sealSvg(size) {
 }
 
 function logout() {
+  stopPolling();
   TOKEN = null;
   SESSION = null;
   DATA = null;
@@ -1496,6 +1538,7 @@ const SUBMIT_ACTIONS = {
 
       await fetchFactionData();
       TAB = "dash";
+      startPolling();
     } catch (e) {
       if (errEl) { errEl.textContent = e.message; errEl.style.display = "block"; }
     }
@@ -1607,6 +1650,7 @@ function initEventDelegation() {
   initEventDelegation();
   if (TOKEN && SESSION) {
     await fetchFactionData();
+    startPolling();
   } else {
     render();
   }
