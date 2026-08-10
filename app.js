@@ -1100,20 +1100,102 @@ function renderSettings() {
 }
 
 /* ============================================================================
-   밝은 블루 톤 UI 컬러 테마
+   로고 색상 자동 추출 기반 UI 컬러 테마
    ============================================================================ */
 
 function hslCss(h, s, l) { return `hsl(${h.toFixed(1)}, ${Math.max(0, s).toFixed(1)}%, ${Math.max(0, Math.min(100, l)).toFixed(1)}%)`; }
 
-// 로고 색상을 굳이 분석하지 않고, 블루 계열 안에서 서로 다른 톤(hue)을 조합해
-// 밝고 파란 느낌의 UI 팔레트를 바로 적용한다.
-function applyBlueTheme() {
-  const accentHue = 213;  // 포인트 컬러(--gold 역할) — 선명한 블루
-  const steelHue = 196;   // 보조 컬러(--steel) — 조금 더 시안에 가까운 블루
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let h = 0, s = 0;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h *= 60;
+  }
+  return { h, s: s * 100, l: l * 100 };
+}
 
-  const gold = hslCss(accentHue, 88, 62);
-  const gold2 = hslCss(accentHue, 88, 50);              // hover 시 좀 더 진한 블루
-  const goldBg = `hsla(${accentHue}, 88%, 62%, 0.16)`;  // 어두운 패널 위에서도 또렷하게 보이는 포인트 틴트
+// 로고 이미지를 캔버스에 그려 픽셀을 읽고, 채도가 있는(회색/흰색/검정이 아닌)
+// 픽셀들의 평균 색상으로부터 대표 색조(hue)와 채도를 뽑아낸다.
+// - 알파값이 낮은(투명) 픽셀은 배경으로 간주해 제외
+// - 너무 밝거나(거의 흰색) 너무 어두운(거의 검정) 픽셀도 로고의 "테두리/그림자"일
+//   가능성이 높아 제외 -> 실제 로고 고유색에 가깝게 뽑히도록 함
+function extractDominantColor(imgUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const size = 48; // 다운샘플링(속도 + 노이즈 감소)
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, size, size);
+        const { data } = ctx.getImageData(0, 0, size, size);
+
+        let sumSin = 0, sumCos = 0, sSum = 0, weight = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+          if (a < 128) continue;
+          const { h, s, l } = rgbToHsl(r, g, b);
+          if (l > 92 || l < 8) continue;   // 거의 흰색/검정 제외
+          if (s < 12) continue;            // 무채색(회색) 제외 -> 색이 있는 픽셀 위주로 반영
+
+          // 색상(hue)은 원형 값이라 단순 평균이 왜곡되므로 각도 평균(circular mean) 사용
+          const rad = (h * Math.PI) / 180;
+          sumSin += Math.sin(rad) * s;
+          sumCos += Math.cos(rad) * s;
+          sSum += s;
+          weight++;
+        }
+
+        if (weight === 0) { resolve(null); return; } // 색이 있는 픽셀을 못 찾음 -> 폴백 사용
+
+        let hue = (Math.atan2(sumSin, sumCos) * 180) / Math.PI;
+        if (hue < 0) hue += 360;
+        const sat = sSum / weight;
+        resolve({ hue, sat });
+      } catch (e) {
+        reject(e); // 캔버스 픽셀 읽기 실패(CORS 등)
+      }
+    };
+    img.onerror = () => reject(new Error("logo image load failed"));
+    img.src = imgUrl;
+  });
+}
+
+// 뽑아낸 hue/saturation으로 --gold, --bg, --panel 등 CSS 변수 팔레트를 생성해 적용.
+// 이미지 분석이 실패하면(CORS 차단, 로드 실패 등) 기본 블루 팔레트로 안전하게 폴백.
+async function applyThemeFromLogo() {
+  let accentHue = 213;   // 폴백: 기본 블루
+  let accentSat = 88;
+
+  try {
+    const result = await extractDominantColor(LOGO_URL);
+    if (result) {
+      accentHue = result.hue;
+      // 채도가 너무 낮으면(로고가 흑백/무채색에 가까우면) UI가 칙칙해지므로 최소값 보정
+      accentSat = Math.max(60, Math.min(92, result.sat));
+    }
+  } catch (e) {
+    // 분석 실패 시 폴백 블루 유지 (콘솔에만 남기고 UI엔 영향 없음)
+    console.warn("로고 색상 자동 추출 실패, 기본 테마로 대체합니다:", e.message);
+  }
+
+  const steelHue = (accentHue + 20) % 360; // 포인트 컬러 대비 살짝 다른 보조 톤
+
+  const gold = hslCss(accentHue, accentSat, 62);
+  const gold2 = hslCss(accentHue, accentSat, 50);
+  const goldBg = `hsla(${accentHue.toFixed(1)}, ${accentSat.toFixed(1)}%, 62%, 0.16)`;
   const bg = hslCss(accentHue, 30, 16);
   const panel = hslCss(accentHue, 24, 21);
   const panel2 = hslCss(accentHue, 22, 25.5);
@@ -1495,7 +1577,7 @@ function initEventDelegation() {
 /* ------------------------------ 초기화 ------------------------------ */
 
 (async function init() {
-  applyBlueTheme();
+  applyThemeFromLogo();
   initEventDelegation();
   if (TOKEN && SESSION) {
     await fetchFactionData();
