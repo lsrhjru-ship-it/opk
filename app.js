@@ -188,8 +188,10 @@ function genFactionCode() {
   return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
+const LOGO_URL = "https://cdn.discordapp.com/attachments/1531501210610434168/1536237644843982888/8D4AAAAASUVORK5CYII.png?ex=6a7aac4c&is=6a795acc&hm=68f874315d648df6b51ad41a2ee748aeddb8f6c7d930768b3d17a21a3180d580";
+
 function sealSvg(size) {
-  return `<img src="https://cdn.discordapp.com/attachments/1531501210610434168/1536237644843982888/8D4AAAAASUVORK5CYII.png?ex=6a7aac4c&is=6a795acc&hm=68f874315d648df6b51ad41a2ee748aeddb8f6c7d930768b3d17a21a3180d580" alt="보안국 로고" class="bureau-logo-img" style="width:${size}px; height:${size}px;" />`;
+  return `<img src="${LOGO_URL}" alt="보안국 로고" class="bureau-logo-img" style="width:${size}px; height:${size}px;" />`;
 }
 
 function logout() {
@@ -1161,20 +1163,21 @@ function extractDominantColor(img) {
 }
 
 // 대표색(hue 중심)을 기준으로 전체 UI 팔레트를 구성해 CSS 변수로 반영한다.
+// (전체적으로 밝은 톤을 쓰도록 배경/패널/텍스트의 명도 기준을 올려서 구성)
 function applyPaletteFromDominant(dom) {
   const h = dom.h;
   const s = Math.min(85, Math.max(45, dom.s));
-  const goldL = Math.min(70, Math.max(45, dom.l));
+  const goldL = Math.min(74, Math.max(52, dom.l));
 
   const gold = hslCss(h, s, goldL);
-  const bg = hslCss(h, Math.min(30, s * 0.35), 7);
-  const panel = hslCss(h, Math.min(26, s * 0.3), 10.5);
-  const panel2 = hslCss(h, Math.min(24, s * 0.28), 13.5);
-  const line = hslCss(h, Math.min(22, s * 0.25), 20);
-  const muted = hslCss(h, Math.min(12, s * 0.15), 58);
-  const text = hslCss(h, Math.min(8, s * 0.08), 94);
+  const bg = hslCss(h, Math.min(22, s * 0.22), 15);
+  const panel = hslCss(h, Math.min(20, s * 0.2), 19.5);
+  const panel2 = hslCss(h, Math.min(18, s * 0.18), 23.5);
+  const line = hslCss(h, Math.min(18, s * 0.2), 32);
+  const muted = hslCss(h, Math.min(10, s * 0.12), 68);
+  const text = hslCss(h, Math.min(6, s * 0.06), 97);
   const steelHue = (h + 190) % 360; // 포인트색과 대비되는 보조색(보색 근처)
-  const steel = hslCss(steelHue, Math.min(55, s), 62);
+  const steel = hslCss(steelHue, Math.min(55, s), 68);
 
   const root = document.documentElement.style;
   root.setProperty("--gold", gold);
@@ -1210,7 +1213,7 @@ function initLogoTheme() {
   };
   img.onerror = () => { };
   // sealSvg()에서 쓰는 로고와 동일한 이미지를 사용
-  img.src = "https://cdn.discordapp.com/attachments/1531501210610434168/1536230110011723867/-1-1.gif?ex=6a7aa548&is=6a7953c8&hm=8f5dc007f13fdcff80fc542dec94ad79cbc8745a610470e3a2e6595ad781c789&";
+  img.src = LOGO_URL;
 }
 
 /* ============================================================================
