@@ -6,7 +6,7 @@
 const API_BASE = "https://lsrhjru.wisp.uno/api";
 
 // 전체 계급 목록
-const RANKS = ["위원장", "부위원장", "본부장", "총감", "차관보", "사령관", "참모장", "감찰관", "작전관", "지휘관", "특별보안관", "감독관", "수사관", "보안관", "교육생"];
+const RANKS = ["처장", "교육원장", "차관보", "관리관", "이사관", "비서실장", "부이사관", "서기관", "사무관", "주사", "주사보", "서기", "서기보", "1등급", "2등급"];
 
 let TOKEN = localStorage.getItem("bureau_token") || null;
 let SESSION = JSON.parse(localStorage.getItem("bureau_session") || "null");
@@ -24,9 +24,9 @@ let LAST_SNAPSHOT = null; // 마지막으로 렌더링한 데이터의 스냅샷
 
 // 계급에 따른 등급 분류 헬퍼 함수
 function getRankCategory(rank) {
-  if (["위원장", "부위원장"].includes(rank)) return "임원직 간부";
-  if (["본부장", "총감", "차관보", "사령관"].includes(rank)) return "고위직 간부";
-  if (["참모장", "감찰관", "작전관", "지휘관"].includes(rank)) return "일반 간부직";
+  if (["처장"].includes(rank)) return "임원직 간부";
+  if (["교육원장", "차관보", "관리관", "이사관", "비서실장"].includes(rank)) return "고위직 간부";
+  if (["부이사관", "서기관", "사무관", "주사"].includes(rank)) return "일반 간부직";
   return "일반직";
 }
 
@@ -34,8 +34,8 @@ function getRankCategory(rank) {
 // permKey: 'members' | 'attendance' | 'notices' | 'apps' | 'warn'
 function hasPermission(permKey) {
   if (!SESSION) return false;
-  // 팩션장(isOwner)이거나 위원장인 경우 모든 권한 허용
-  if (SESSION.isOwner || SESSION.rank === "위원장") return true;
+  // 팩션장(isOwner)이거나 처장인 경우 모든 권한 허용
+  if (SESSION.isOwner || SESSION.rank === "처장") return true;
 
   // 부여된 권한 목록 배열 확인
   const userPerms = SESSION.permissions || [];
@@ -57,7 +57,7 @@ function getAccessibleTabs() {
   if (hasPermission("warn")) baseTabs.push({ key: "warn", label: "내부경고" });
 
   // 팩션장/최고 임원 전용 관리 메뉴
-  if (SESSION && (SESSION.isOwner || SESSION.rank === "위원장")) {
+  if (SESSION && (SESSION.isOwner || SESSION.rank === "처장")) {
     baseTabs.push({ key: "accounts", label: "계정/권한 관리" });
     baseTabs.push({ key: "settings", label: "설정" });
   }
@@ -830,7 +830,7 @@ function renderMembers() {
     <div id="addMemberForm" class="panel" style="display:none; padding:18px; margin-bottom:18px; gap:12px; align-items:flex-end; flex-wrap:wrap; flex-direction:row;">
       <div class="field"><label>이름</label><input id="mName" /></div>
       <div class="field"><label>고유번호</label><input id="mBadge" class="mono" style="width:110px;" placeholder="14" /></div>
-      <div class="field"><label>계급</label><select id="mRank" style="border-radius:var(--radius-sm);">${RANKS.map(r => `<option value="${r}" ${r === "교육생" ? "selected" : ""}>${r}</option>`).join("")}</select></div>
+      <div class="field"><label>계급</label><select id="mRank" style="border-radius:var(--radius-sm);">${RANKS.map(r => `<option value="${r}" ${r === "2등급" ? "selected" : ""}>${r}</option>`).join("")}</select></div>
       <button data-action="submit-member" class="btn-gold">등록</button>
     </div>
     <div class="panel" style="display:flex; align-items:center; gap:8px; margin-bottom:14px; padding:6px 14px; max-width:280px;">
@@ -1199,7 +1199,7 @@ function renderAccounts() {
 
   DATA.accounts.forEach(a => {
     const userPerms = a.permissions || [];
-    const isTopAdmin = (a.rank === "위원장" || a.isOwner);
+    const isTopAdmin = (a.rank === "처장" || a.isOwner);
 
     let permHtml = `<div style="display:flex; gap:8px; flex-wrap:wrap; font-size:11.5px;">`;
     if (isTopAdmin) {
