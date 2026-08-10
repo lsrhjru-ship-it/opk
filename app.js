@@ -841,9 +841,8 @@ function renderMemberRows(list) {
   list.forEach(a => {
     const category = getRankCategory(a.rank);
     let catBadgeColor = "var(--muted)";
-    if (category === "임원직 간부") catBadgeColor = "var(--gold)";
-    else if (category === "고위직 간부") catBadgeColor = "#e74c3c";
-    else if (category === "일반 간부직") catBadgeColor = "#3498db";
+    if (category === "고위직") catBadgeColor = "var(--gold)";
+    else if (category === "간부직") catBadgeColor = "#3498db";
 
     html += `<div class="table-row row-hover" style="grid-template-columns:${cols}; align-items:center;" data-id="${a.id}">
       <span style="display:flex; align-items:center; gap:6px; font-weight:600;">
@@ -1383,11 +1382,19 @@ const CLICK_ACTIONS = {
     } catch (e) { }
   },
   "del-notice": async (el) => {
+    const id = el.dataset.id;
+    // 낙관적 업데이트: 서버 응답을 기다리지 않고 화면에서 즉시 제거해 체감 속도를 높인다.
+    const backup = DATA.sideNotices;
+    DATA.sideNotices = DATA.sideNotices.filter(n => String(n.id) !== String(id));
+    refreshTab();
+    showToast("공지가 삭제되었습니다", "danger");
     try {
-      await apiCall(`/notices/${el.dataset.id}`, "DELETE");
-      showToast("공지가 삭제되었습니다", "danger");
-      await fetchFactionData();
-    } catch (e) { }
+      await apiCall(`/notices/${id}`, "DELETE");
+    } catch (e) {
+      // 실패 시 원래 목록으로 복구
+      DATA.sideNotices = backup;
+      refreshTab();
+    }
   },
   "copy-notice": (el) => {
     const id = el.dataset.id;
@@ -1491,11 +1498,17 @@ const CLICK_ACTIONS = {
     } catch (e) { }
   },
   "remove-warn": async (el) => {
+    const id = el.dataset.id;
+    const backup = DATA.warnings;
+    DATA.warnings = DATA.warnings.filter(w => String(w.id) !== String(id));
+    refreshTab();
+    showToast("삭제되었습니다", "danger");
     try {
-      await apiCall(`/warnings/${el.dataset.id}`, "DELETE");
-      showToast("삭제되었습니다", "danger");
-      await fetchFactionData();
-    } catch (e) { }
+      await apiCall(`/warnings/${id}`, "DELETE");
+    } catch (e) {
+      DATA.warnings = backup;
+      refreshTab();
+    }
   },
 
   "change-password": async (el) => {
@@ -1512,12 +1525,16 @@ const CLICK_ACTIONS = {
   },
   "remove-account": async (el) => {
     const id = el.dataset.id;
+    const backup = DATA.accounts;
+    DATA.accounts = DATA.accounts.filter(a => String(a.id) !== String(id));
+    refreshTab();
+    showToast("계정이 삭제되었습니다", "danger");
     try {
       await apiCall(`/members/${id}`, "DELETE");
-      showToast("계정이 삭제되었습니다", "danger");
-      DATA.accounts = DATA.accounts.filter(a => String(a.id) !== String(id));
+    } catch (e) {
+      DATA.accounts = backup;
       refreshTab();
-    } catch (e) { }
+    }
   },
 
   "save-webhook": async () => {
