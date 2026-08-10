@@ -6,7 +6,7 @@
 const API_BASE = "https://lsrhjru.wisp.uno/api";
 
 // 전체 계급 목록
-const RANKS = ["처장", "교육원장", "차관보", "관리관", "이사관", "비서실장", "부이사관", "서기관", "사무관", "주사", "주사보", "서기", "서기보", "1등급", "2등급"];
+const RANKS = ["처장", "교육원장", "차관보", "관리관", "이사관", "비서실장", "부이사관", "서기관", "사무관", "주사", "주사보", "서기", "서기보", "경찰청 1등급", "경찰청 2등급"];
 
 let TOKEN = localStorage.getItem("bureau_token") || null;
 let SESSION = JSON.parse(localStorage.getItem("bureau_session") || "null");
