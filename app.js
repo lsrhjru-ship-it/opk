@@ -841,12 +841,33 @@ function renderRankingPanelHtml(title, limit) {
   return html;
 }
 
+// 팩션원 한 명의 최신 출퇴근 기록을 찾는다.
+// - 현재 근무 중(퇴근 기록 없음)인 로그가 있으면 그걸 우선 사용
+// - 없으면 가장 최근에 완료된(퇴근한) 로그를 사용
+// - user_id가 없는 옛날 기록은 이름+고유번호로 매칭해서 함께 포함시킨다.
+function findMemberLatestLog(acc) {
+  const memberLogs = DATA.attendance.filter(log => {
+    if (log.user_id != null) return String(log.user_id) === String(acc.id);
+    return log.name === acc.name && String(log.badge) === String(acc.badge);
+  });
+  if (memberLogs.length === 0) return { log: null, isWorking: false };
+
+  const workingLog = memberLogs.find(l => !l.clock_out_time);
+  if (workingLog) return { log: workingLog, isWorking: true };
+
+  const sorted = [...memberLogs].sort((a, b) => {
+    const da = parseKoreanDateTime(a.clock_in_time);
+    const db = parseKoreanDateTime(b.clock_in_time);
+    return (db ? db.getTime() : 0) - (da ? da.getTime() : 0);
+  });
+  return { log: sorted[0], isWorking: false };
+}
+
 function renderAttendance() {
-  const logs = [...DATA.attendance].reverse();
   const cols = "1.2fr 1fr 0.8fr 1.5fr 1.5fr 0.8fr";
 
   let html = `
-    ${header("근태 관리", "인원들의 출퇴근 기록 및 계급을 확인합니다.")}
+    ${header("근태 관리", "전체 팩션원의 현재 근무 상태를 확인합니다.")}
     ${renderRankingPanelHtml("근무 총시간 순위 (근무 중인 경우 현재 시각까지 반영)")}`;
 
   html += `
@@ -855,20 +876,25 @@ function renderAttendance() {
         <span>이름</span><span>계급</span><span>고유번호</span><span>출근 시간</span><span>퇴근 시간</span><span>상태</span>
       </div>`;
 
-  if (logs.length === 0) {
-    html += `<div style="padding:28px; text-align:center; color:var(--muted); font-size:13.5px;">출퇴근 기록이 없습니다.</div>`;
+  if (DATA.accounts.length === 0) {
+    html += `<div style="padding:28px; text-align:center; color:var(--muted); font-size:13.5px;">등록된 팩션원이 없습니다.</div>`;
   } else {
-    logs.forEach(log => {
-      const userAcc = DATA.accounts.find(u => u.id === log.user_id);
-      const userRank = userAcc ? userAcc.rank : (log.user_id === SESSION.id ? SESSION.rank : "님");
-      const isWorking = !log.clock_out_time;
+    // 근무 중인 사람이 위로 오도록 정렬, 그 다음은 이름순
+    const rows = DATA.accounts.map(acc => {
+      const { log, isWorking } = findMemberLatestLog(acc);
+      return { acc, log, isWorking };
+    }).sort((a, b) => {
+      if (a.isWorking !== b.isWorking) return a.isWorking ? -1 : 1;
+      return a.acc.name.localeCompare(b.acc.name, 'ko');
+    });
 
+    rows.forEach(({ acc, log, isWorking }) => {
       html += `<div class="table-row row-hover" style="grid-template-columns:${cols};">
-        <span style="font-weight:600;">${log.name}</span>
-        <span style="color:var(--gold); font-size:12.5px; font-weight:600;">${userRank}</span>
-        <span class="mono" style="color:var(--gold); font-weight:600;">${formatBadge(log.badge)}</span>
-        <span class="mono" style="font-size:12.5px; color:var(--muted);">${formatDisplayDateTime(log.clock_in_time)}</span>
-        <span class="mono" style="font-size:12.5px; color:var(--muted);">${isWorking ? '-' : formatDisplayDateTime(log.clock_out_time)}</span>
+        <span style="font-weight:600;">${acc.name}</span>
+        <span style="color:var(--gold); font-size:12.5px; font-weight:600;">${acc.rank}</span>
+        <span class="mono" style="color:var(--gold); font-weight:600;">${formatBadge(acc.badge)}</span>
+        <span class="mono" style="font-size:12.5px; color:var(--muted);">${log ? formatDisplayDateTime(log.clock_in_time) : '-'}</span>
+        <span class="mono" style="font-size:12.5px; color:var(--muted);">${log && log.clock_out_time ? formatDisplayDateTime(log.clock_out_time) : '-'}</span>
         <span class="badge ${isWorking ? 'ok' : 'steel'}">${isWorking ? '근무 중' : '퇴근'}</span>
       </div>`;
     });
