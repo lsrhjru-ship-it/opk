@@ -470,7 +470,7 @@ function renderLogin() {
       <div class="field"><label>아이디</label><input id="loginUser" style="width:100%;" placeholder="username" autocomplete="username" /></div>
       <div class="field" style="margin-top:14px;"><label>비밀번호</label><input id="loginPass" type="password" style="width:100%;" placeholder="••••••••" autocomplete="current-password" /></div>
       <div id="loginErr" style="font-size:12.5px; color:var(--danger); margin-top:10px; display:none;"></div>
-      <button type="submit" class="btn-gold disp" style="width:100%; padding:12px 0; font-size:15px; margin-top:20px;">접속 승인 요청</button>
+      <button type="submit" class="btn-gold disp" style="width:100%; padding:12px 0; font-size:15px; margin-top:20px;">로그인</button>
       <button type="button" data-action="goto-gate" class="link-btn" style="display:block; margin:16px auto 0;">← 뒤로</button>
     </form>
   `);
