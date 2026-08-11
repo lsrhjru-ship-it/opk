@@ -703,7 +703,36 @@ function parseMinDetention(etcText) {
 
 const BAIL_RATE_PER_MIN = 5000000;
 
-function formatWon(n) { return n.toLocaleString() + " 원"; }
+// 숫자를 "1억 5,000만원" 같은 한국식 단위 표기로 변환하는 헬퍼.
+// (예: 100,000,000 -> "1억원", 50,000,000 -> "5,000만원")
+function numberToKoreanUnit(n) {
+  const sign = n < 0 ? "-" : "";
+  n = Math.abs(Math.round(n));
+  if (n === 0) return "0";
+  const eok = Math.floor(n / 100000000);
+  const remainder1 = n % 100000000;
+  const man = Math.floor(remainder1 / 10000);
+  const rest = remainder1 % 10000;
+  const parts = [];
+  if (eok > 0) parts.push(`${eok.toLocaleString()}억`);
+  if (man > 0) parts.push(`${man.toLocaleString()}만`);
+  if (rest > 0) parts.push(`${rest.toLocaleString()}`);
+  return sign + parts.join(" ");
+}
+
+function formatWon(n) { return numberToKoreanUnit(n) + "원"; }
+
+// LAW_DATA 안의 "50,000,000원" 같은 원문 벌금 문자열을 한국식 단위 표기로 바꿔주는 헬퍼.
+// "범죄자와 동일"처럼 숫자가 없는 문구는 그대로 둔다.
+function formatFineText(text) {
+  if (!text) return "-";
+  const m = String(text).match(/([\d,]+)\s*원/);
+  if (!m) return text;
+  const num = parseInt(m[1].replace(/,/g, ''), 10);
+  if (isNaN(num)) return text;
+  return numberToKoreanUnit(num) + "원";
+}
+
 function formatMinutes(n) {
   if (n <= 0) return "0분";
   const h = Math.floor(n / 60), m = n % 60;
@@ -794,7 +823,7 @@ function renderLawResults() {
           <span style="text-align:center; font-weight:bold; color:${checked ? 'var(--gold)' : 'var(--muted)'};">${checked ? '✓' : '☐'}</span>
           <span style="text-align:center; font-size:12px; color:var(--muted);">${item.category}</span>
           <span style="font-weight:600;">${item.name}</span>
-          <span class="mono" style="text-align:center; color:var(--gold);">${item.fine || '-'}</span>
+          <span class="mono" style="text-align:center; color:var(--gold);">${formatFineText(item.fine)}</span>
           <span class="mono" style="text-align:center; color:var(--steel);">${item.detention || '-'}</span>
           <span style="font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${item.etc || '-'}</span>
         </div>`;
