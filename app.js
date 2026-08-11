@@ -5,11 +5,29 @@
 
 const API_BASE = "https://lsrhjru.wisp.uno/api";
 
+// 사이트 접속 시 캐시를 강제로 갱신하기 위한 버전 값.
+// 배포할 때마다 이 값을 바꾸면, 접속자의 브라우저/서비스워커 캐시를 정리하고
+// 자동으로 새 버전을 받아오게 됩니다 (로그인 상태(localStorage)는 건드리지 않으므로 로그아웃되지 않습니다).
+const APP_VERSION = "2026.08.11-1";
+
 // 전체 계급 목록
 const RANKS = ["처장", "교육원장", "차관보", "관리관", "이사관", "비서실장", "부이사관", "서기관", "사무관", "주사", "주사보", "서기", "서기보", "경찰청 1등급", "경찰청 2등급"];
 
 let TOKEN = localStorage.getItem("bureau_token") || null;
-let SESSION = JSON.parse(localStorage.getItem("bureau_session") || "null");
+
+// SESSION 파싱: 저장된 값이 손상되어 있으면(예: 이전 버전 저장 형식, 브라우저 확장프로그램 간섭 등)
+// JSON.parse가 예외를 던지면서 스크립트 전체 실행이 중단되어 "빈 화면"으로 보이는 문제가 있었음.
+// try/catch로 감싸고, 손상된 경우에는 로그인 정보만 정리한 뒤 로그인 화면으로 안전하게 보낸다.
+let SESSION = null;
+try {
+  SESSION = JSON.parse(localStorage.getItem("bureau_session") || "null");
+} catch (e) {
+  console.warn("저장된 세션 데이터가 손상되어 초기화합니다.", e);
+  TOKEN = null;
+  SESSION = null;
+  localStorage.removeItem("bureau_token");
+  localStorage.removeItem("bureau_session");
+}
 let DATA = null;
 let TAB = "dash";
 let VIEW = "gate";
@@ -378,6 +396,8 @@ function renderCreate() {
       <div class="field"><label>팩션 이름</label><input id="cfName" style="width:100%;" placeholder="예) 경찰청" /></div>
       <div class="field" style="margin-top:14px;"><label>설립자 이름</label><input id="cfFounderName" style="width:100%;" /></div>
       <div class="field" style="margin-top:14px;"><label>설립자 고유번호</label><input id="cfBadge" class="mono" style="width:100%;" placeholder="예) 0001" /></div>
+      <div class="field" style="margin-top:14px;"><label>디스코드 ID</label><input id="cfDiscordId" class="mono" style="width:100%;" placeholder="예) 123456789012345678" /></div>
+      <div class="field" style="margin-top:14px;"><label>디스코드 봇 인증코드</label><input id="cfVerifyCode" class="mono" style="width:100%; letter-spacing:2px;" placeholder="봇에서 /팩션인증코드 실행 후 발급받은 코드" /></div>
       <div class="field" style="margin-top:14px;"><label>로그인 아이디</label><input id="cfUser" style="width:100%;" autocomplete="username" /></div>
       <div class="field" style="margin-top:14px;"><label>로그인 비밀번호 (6자 이상)</label><input id="cfPass" type="password" style="width:100%;" autocomplete="new-password" /></div>
       <div id="createErr" style="font-size:12.5px; color:var(--danger); margin-top:10px; display:none;"></div>
@@ -1728,20 +1748,28 @@ const SUBMIT_ACTIONS = {
     const name = document.getElementById("cfName").value.trim();
     const founderName = document.getElementById("cfFounderName").value.trim();
     const badge = document.getElementById("cfBadge").value.trim();
+    const discordId = document.getElementById("cfDiscordId").value.trim();
+    const verificationCode = document.getElementById("cfVerifyCode").value.trim();
     const username = document.getElementById("cfUser").value.trim();
     const password = document.getElementById("cfPass").value;
     const err = document.getElementById("createErr");
 
-    if (!name || !founderName || !badge || !username || password.length < 6) {
+    if (!name || !founderName || !badge || !discordId || !verificationCode || !username || password.length < 6) {
       err.textContent = "모든 항목을 입력하세요 (비밀번호 6자 이상)"; err.style.display = "block"; return;
     }
 
+    // "디스코드 봇으로 ID 등록한 사람만 팩션 생성 가능" 제한은 서버(API)가
+    // discordId + verificationCode를 봇이 발급한 값과 대조해 검증한다 — 프론트엔드
+    // 값 검사만으로는 누구나 값을 바꿔서 우회할 수 있으므로 신뢰할 수 없다.
+    // 검증 실패 시 apiCall이 백엔드가 내려준 사유를 토스트/에러 문구로 보여준다.
     const code = genFactionCode();
     try {
-      await apiCall("/factions/create", "POST", { code, name, founderName, username, password, badge });
+      await apiCall("/factions/create", "POST", { code, name, founderName, username, password, badge, discordId, verificationCode });
       LAST = { code, factionName: name };
       VIEW = "createDone"; render();
-    } catch (e) { }
+    } catch (e) {
+      if (err) { err.textContent = e.message; err.style.display = "block"; }
+    }
   },
   "submit-join": async () => {
     const code = document.getElementById("jfCode").value.trim().toUpperCase();
@@ -1939,12 +1967,108 @@ function initEventDelegation() {
   });
 }
 
+/* ------------------------------ 캐시 강제 갱신 (로그인 유지) ------------------------------ */
+
+// 접속 시점에 APP_VERSION이 바뀌어 있으면(새 배포) 예전 캐시(서비스워커/Cache Storage)를
+// 정리하고 한 번만 새로고침한다. localStorage(bureau_token/bureau_session)는 건드리지
+// 않으므로 로그인 상태는 유지된 채로 최신 코드만 다시 받아오게 된다.
+async function refreshStaleCacheIfNeeded() {
+  try {
+    const savedVersion = localStorage.getItem("bureau_app_version");
+    if (savedVersion === APP_VERSION) return false;
+
+    // 같은 새로고침이 반복(캐시 문제 등으로 버전이 계속 안 맞는 경우)되는 걸 막기 위한 안전장치
+    const alreadyTriedThisLoad = sessionStorage.getItem("bureau_cache_refresh_inflight");
+    localStorage.setItem("bureau_app_version", APP_VERSION);
+    if (alreadyTriedThisLoad) return false;
+
+    let didClear = false;
+    if (window.caches && caches.keys) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+      didClear = keys.length > 0;
+    }
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+      didClear = didClear || regs.length > 0;
+    }
+
+    if (didClear) {
+      sessionStorage.setItem("bureau_cache_refresh_inflight", "1");
+      location.reload();
+      return true; // 리로드 중이므로 나머지 초기화는 건너뜀
+    }
+  } catch (e) {
+    console.warn("캐시 갱신 중 오류(무시하고 계속 진행):", e);
+  }
+  return false;
+}
+
+/* ------------------------------ 전역 오류 안전망 ------------------------------ */
+
+// 예상 못한 오류로 렌더링이 중간에 멈춰 "빈 화면"만 남는 것을 막기 위한 안전망.
+// 로그인 정보는 건드리지 않고(=로그아웃 없이) 화면만 안내 메시지로 대체한다.
+function renderFatalError() {
+  const app = document.getElementById("app");
+  if (!app) return;
+  app.innerHTML = `
+    <div style="min-height:100vh; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:14px; padding:24px; text-align:center; color:var(--text, #333);">
+      <div style="font-size:15px; font-weight:600;">화면을 불러오는 중 문제가 발생했습니다.</div>
+      <div style="font-size:12.5px; color:var(--muted, #888);">잠시 후 자동으로 새로고침을 시도합니다.</div>
+      <button onclick="location.reload()" style="padding:10px 20px; border-radius:8px; border:1px solid #ccc; background:#fff; cursor:pointer;">지금 새로고침</button>
+    </div>`;
+}
+
+window.addEventListener("error", (e) => {
+  console.error("전역 오류:", e.error || e.message);
+  if (!document.getElementById("tabContent") && !document.getElementById("app")?.innerHTML.trim()) {
+    renderFatalError();
+  }
+});
+window.addEventListener("unhandledrejection", (e) => {
+  console.error("처리되지 않은 Promise 오류:", e.reason);
+});
+
+// 로그인된 상태로 접속했을 때의 최초 데이터 로딩을 담당. 실패 시 재시도 UI를 띄우며,
+// 재시도 버튼을 눌러도 이벤트 위임/테마 설정을 다시 등록하지 않도록 init()과 분리했다.
+async function bootAuthedSession() {
+  const app = document.getElementById("app");
+  if (app) app.innerHTML = `<div style="min-height:100vh; display:flex; align-items:center; justify-content:center; color:var(--muted, #888);">불러오는 중입니다...</div>`;
+
+  try {
+    await fetchFactionData();
+  } catch (e) {
+    console.error(e); // fetchFactionData 내부에서 이미 처리되지만 혹시 모를 예외까지 방어
+  }
+
+  if (!DATA) {
+    // 첫 로딩이 실패해 DATA가 비어있는 상태로 남는 경우, 무한 로딩/빈 화면 대신 재시도 버튼을 보여준다.
+    if (app) {
+      app.innerHTML = `
+        <div style="min-height:100vh; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:14px; color:var(--muted, #888);">
+          <div>데이터를 불러오지 못했습니다. 네트워크 상태를 확인해주세요.</div>
+          <button id="retryInitBtn" style="padding:10px 20px; border-radius:8px; border:1px solid #ccc; background:#fff; cursor:pointer;">다시 시도</button>
+        </div>`;
+      const btn = document.getElementById("retryInitBtn");
+      if (btn) btn.addEventListener("click", bootAuthedSession);
+    }
+    return;
+  }
+  startPolling();
+}
+
 (async function init() {
+  const reloading = await refreshStaleCacheIfNeeded();
+  if (reloading) return;
+
   applyThemeFromLogo();
   initEventDelegation();
+
   if (TOKEN && SESSION) {
-    await fetchFactionData();
-    startPolling();
+    // 예전에는 이 시점에 아무것도 그리지 않아서, 첫 API 호출이 느리거나 실패하면
+    // (네트워크 순간 끊김, 서버 콜드스타트 등) 사용자에게 완전히 빈 화면만 보이는 문제가 있었다.
+    await bootAuthedSession();
   } else {
     render();
   }
