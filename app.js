@@ -32,6 +32,9 @@ let DATA = null;
 let TAB = "dash";
 let VIEW = "gate";
 let LAST = {};
+// 디스코드 OAuth("디스코드로 인증하기") 인증 결과 — 성공 시 { discordId, discordName, verificationCode }
+let DISCORD_AUTH = null;
+let DISCORD_AUTH_ERROR = null;
 
 // 자동 새로고침(폴링) 설정
 const POLL_INTERVAL_MS = 15000; // 15초마다 서버 데이터 재조회
@@ -390,19 +393,35 @@ function renderGate() {
 }
 
 function renderCreate() {
+  // 아직 디스코드 인증 전이면, 나머지 입력폼 없이 인증 버튼만 보여준다.
+  // (사람이 디스코드 ID를 직접 타이핑하는 대신, 실제 디스코드 계정 인증을 거치게 해서
+  //  더 정확하게 본인 확인을 하기 위함 — 허용된 계정이 아니면 이 단계에서 걸러진다.)
+  if (!DISCORD_AUTH) {
+    return authWrap(`
+      <div class="mono" style="font-size:11.5px; font-weight:600; color:var(--muted); margin-bottom:14px; text-align:center;">새 팩션 만들기</div>
+      <div style="font-size:13px; line-height:1.7; color:var(--muted); margin-bottom:20px; text-align:center;">
+        팩션 생성은 디스코드 인증이 필요합니다.<br/>허용된 디스코드 계정만 생성할 수 있어요.
+      </div>
+      ${DISCORD_AUTH_ERROR ? `<div style="font-size:12.5px; color:var(--danger); margin-bottom:16px; text-align:center;">${DISCORD_AUTH_ERROR}</div>` : ''}
+      <button data-action="discord-authorize" class="btn-gold disp" style="width:100%; padding:13px 0; font-size:15px;">디스코드로 인증하기</button>
+      <button type="button" data-action="goto-gate" class="link-btn" style="display:block; margin:16px auto 0;">← 뒤로</button>
+    `);
+  }
+
+  const verifiedLabel = DISCORD_AUTH.discordName || DISCORD_AUTH.discordId;
   return authWrap(`
     <form data-action="submit-create">
       <div class="mono" style="font-size:11.5px; font-weight:600; color:var(--muted); margin-bottom:16px;">새 팩션 만들기</div>
+      <div class="badge ok" style="margin-bottom:16px; font-size:12px; padding:6px 12px;">✓ 디스코드 인증됨 · ${verifiedLabel}</div>
       <div class="field"><label>팩션 이름</label><input id="cfName" style="width:100%;" placeholder="예) 경찰청" /></div>
       <div class="field" style="margin-top:14px;"><label>설립자 이름</label><input id="cfFounderName" style="width:100%;" /></div>
       <div class="field" style="margin-top:14px;"><label>설립자 고유번호</label><input id="cfBadge" class="mono" style="width:100%;" placeholder="예) 0001" /></div>
-      <div class="field" style="margin-top:14px;"><label>디스코드 ID</label><input id="cfDiscordId" class="mono" style="width:100%;" placeholder="예) 123456789012345678" /></div>
-      <div class="field" style="margin-top:14px;"><label>디스코드 봇 인증코드</label><input id="cfVerifyCode" class="mono" style="width:100%; letter-spacing:2px;" placeholder="봇에서 /팩션인증코드 실행 후 발급받은 코드" /></div>
       <div class="field" style="margin-top:14px;"><label>로그인 아이디</label><input id="cfUser" style="width:100%;" autocomplete="username" /></div>
       <div class="field" style="margin-top:14px;"><label>로그인 비밀번호 (6자 이상)</label><input id="cfPass" type="password" style="width:100%;" autocomplete="new-password" /></div>
       <div id="createErr" style="font-size:12.5px; color:var(--danger); margin-top:10px; display:none;"></div>
       <button type="submit" class="btn-gold disp" style="width:100%; padding:12px 0; font-size:15px; margin-top:20px;">팩션 생성</button>
-      <button type="button" data-action="goto-gate" class="link-btn" style="display:block; margin:16px auto 0;">← 뒤로</button>
+      <button type="button" data-action="discord-reauth" class="link-btn" style="display:block; margin:12px auto 0;">다른 디스코드 계정으로 다시 인증</button>
+      <button type="button" data-action="goto-gate" class="link-btn" style="display:block; margin:6px auto 0;">← 뒤로</button>
     </form>
   `);
 }
@@ -1394,6 +1413,14 @@ async function applyThemeFromLogo() {
 
 const CLICK_ACTIONS = {
   "goto-create": () => { VIEW = "create"; render(); },
+  "discord-authorize": () => {
+    window.location.href = `${API_BASE}/discord/login`;
+  },
+  "discord-reauth": () => {
+    DISCORD_AUTH = null;
+    DISCORD_AUTH_ERROR = null;
+    render();
+  },
   "goto-join": () => { VIEW = "join"; render(); },
   "goto-login": () => { VIEW = "login"; render(); },
   "goto-gate": () => { VIEW = "gate"; render(); },
@@ -1748,24 +1775,29 @@ const SUBMIT_ACTIONS = {
     const name = document.getElementById("cfName").value.trim();
     const founderName = document.getElementById("cfFounderName").value.trim();
     const badge = document.getElementById("cfBadge").value.trim();
-    const discordId = document.getElementById("cfDiscordId").value.trim();
-    const verificationCode = document.getElementById("cfVerifyCode").value.trim();
     const username = document.getElementById("cfUser").value.trim();
     const password = document.getElementById("cfPass").value;
     const err = document.getElementById("createErr");
 
-    if (!name || !founderName || !badge || !discordId || !verificationCode || !username || password.length < 6) {
+    if (!DISCORD_AUTH || !DISCORD_AUTH.discordId || !DISCORD_AUTH.verificationCode) {
+      err.textContent = "디스코드 인증이 필요합니다."; err.style.display = "block"; return;
+    }
+    if (!name || !founderName || !badge || !username || password.length < 6) {
       err.textContent = "모든 항목을 입력하세요 (비밀번호 6자 이상)"; err.style.display = "block"; return;
     }
 
-    // "디스코드 봇으로 ID 등록한 사람만 팩션 생성 가능" 제한은 서버(API)가
-    // discordId + verificationCode를 봇이 발급한 값과 대조해 검증한다 — 프론트엔드
-    // 값 검사만으로는 누구나 값을 바꿔서 우회할 수 있으므로 신뢰할 수 없다.
-    // 검증 실패 시 apiCall이 백엔드가 내려준 사유를 토스트/에러 문구로 보여준다.
+    // "디스코드로 인증한 사람만 팩션 생성 가능" 제한은 서버(API)가 discordId +
+    // verificationCode를 OAuth 인증 시 발급한 값과 대조해 검증한다. 이 값들은
+    // 사람이 입력한 게 아니라 디스코드 인증 콜백에서 그대로 받아온 값이라 신뢰할 수 있다.
     const code = genFactionCode();
     try {
-      await apiCall("/factions/create", "POST", { code, name, founderName, username, password, badge, discordId, verificationCode });
+      await apiCall("/factions/create", "POST", {
+        code, name, founderName, username, password, badge,
+        discordId: DISCORD_AUTH.discordId,
+        verificationCode: DISCORD_AUTH.verificationCode,
+      });
       LAST = { code, factionName: name };
+      DISCORD_AUTH = null; // 1회용 코드를 소진했으므로 초기화
       VIEW = "createDone"; render();
     } catch (e) {
       if (err) { err.textContent = e.message; err.style.display = "block"; }
@@ -2058,10 +2090,41 @@ async function bootAuthedSession() {
   startPolling();
 }
 
+// 디스코드 인증(OAuth) 콜백에서 사이트로 되돌아왔을 때, 주소창에 담겨온 결과값을 읽어
+// DISCORD_AUTH에 반영한다. 처리 후에는 새로고침 시 중복 처리되지 않도록 URL을 정리한다.
+function consumeDiscordAuthResult() {
+  const params = new URLSearchParams(location.search);
+  const discordAuth = params.get("discordAuth");
+  if (!discordAuth) return;
+
+  if (discordAuth === "success") {
+    DISCORD_AUTH = {
+      discordId: params.get("discordId") || "",
+      discordName: params.get("discordName") || "",
+      verificationCode: params.get("verificationCode") || "",
+    };
+    DISCORD_AUTH_ERROR = null;
+  } else {
+    const messages = {
+      denied: "디스코드 인증을 취소했습니다.",
+      notAllowed: "팩션 생성이 허용된 디스코드 계정이 아닙니다. 관리자에게 문의하세요.",
+      expired: "인증 요청이 만료되었습니다. 다시 시도해주세요.",
+      invalid: "잘못된 인증 요청입니다. 다시 시도해주세요.",
+      failed: "디스코드 인증 중 오류가 발생했습니다. 다시 시도해주세요.",
+    };
+    DISCORD_AUTH = null;
+    DISCORD_AUTH_ERROR = messages[discordAuth] || "디스코드 인증에 실패했습니다.";
+  }
+
+  if (!TOKEN || !SESSION) VIEW = "create"; // 로그인 전 흐름일 때만 팩션 생성 화면으로 이동
+  history.replaceState({}, "", location.origin + location.pathname);
+}
+
 (async function init() {
   const reloading = await refreshStaleCacheIfNeeded();
   if (reloading) return;
 
+  consumeDiscordAuthResult();
   applyThemeFromLogo();
   initEventDelegation();
 
