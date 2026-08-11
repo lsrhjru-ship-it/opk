@@ -8,7 +8,7 @@ const API_BASE = "https://lsrhjru.wisp.uno/api";
 // 사이트 접속 시 캐시를 강제로 갱신하기 위한 버전 값.
 // 배포할 때마다 이 값을 바꾸면, 접속자의 브라우저/서비스워커 캐시를 정리하고
 // 자동으로 새 버전을 받아오게 됩니다 (로그인 상태(localStorage)는 건드리지 않으므로 로그아웃되지 않습니다).
-const APP_VERSION = "2026.08.11-1";
+const APP_VERSION = "2026.08.11-2";
 
 // 전체 계급 목록
 const RANKS = ["처장", "교육원장", "차관보", "관리관", "이사관", "비서실장", "부이사관", "서기관", "사무관", "주사", "주사보", "서기", "서기보", "경찰청 1등급", "경찰청 2등급"];
@@ -192,7 +192,7 @@ async function fetchFactionData() {
         // 본인 계정이 삭제된 경우
         return logout();
       }
-      newSessionBits = { rank: me.rank, permissions: me.permissions || [], isOwner: !!me.isOwner };
+      newSessionBits = { name: me.name, rank: me.rank, permissions: me.permissions || [], isOwner: !!me.isOwner };
     }
 
     // 실제로 내용이 바뀌었는지 확인 (폴링으로 매번 화면을 통째로 다시 그리면
@@ -203,6 +203,7 @@ async function fetchFactionData() {
 
     DATA = newData;
     if (SESSION && newSessionBits) {
+      SESSION.name = newSessionBits.name;
       SESSION.rank = newSessionBits.rank;
       SESSION.permissions = newSessionBits.permissions;
       SESSION.isOwner = newSessionBits.isOwner;
@@ -265,7 +266,7 @@ document.addEventListener("visibilitychange", () => {
 function showToast(msg, kind) {
   const el = document.getElementById("toast");
   if (!el) return;
-  el.textContent = (kind === "danger" ? "⚠ " : "✓ ") + msg;
+  el.textContent = msg;
   el.className = kind === "danger" ? "danger" : "";
   el.style.display = "flex";
   clearTimeout(window._toastT);
@@ -363,6 +364,10 @@ function silentSync() {
     const input = document.getElementById(`badgeInput_${EDIT_BADGE_ID}`);
     if (input) { input.focus(); input.select(); }
   }
+  if (EDIT_NAME_ID) {
+    const input = document.getElementById(`nameInput_${EDIT_NAME_ID}`);
+    if (input) { input.focus(); input.select(); }
+  }
 }
 
 /* ------------------------------ 로그인 전 화면 ------------------------------ */
@@ -412,7 +417,7 @@ function renderCreate() {
   return authWrap(`
     <form data-action="submit-create">
       <div class="mono" style="font-size:11.5px; font-weight:600; color:var(--muted); margin-bottom:16px;">새 팩션 만들기</div>
-      <div class="badge ok" style="margin-bottom:16px; font-size:12px; padding:6px 12px;">✓ 디스코드 인증됨 · ${verifiedLabel}</div>
+      <div class="badge ok" style="margin-bottom:16px; font-size:12px; padding:6px 12px;">인증됨 · ${verifiedLabel}</div>
       <div class="field"><label>팩션 이름</label><input id="cfName" style="width:100%;" placeholder="예) 경찰청" /></div>
       <div class="field" style="margin-top:14px;"><label>설립자 이름</label><input id="cfFounderName" style="width:100%;" /></div>
       <div class="field" style="margin-top:14px;"><label>설립자 고유번호</label><input id="cfBadge" class="mono" style="width:100%;" placeholder="예) 0001" /></div>
@@ -602,10 +607,10 @@ function renderRpRankingPanelHtml(title, limit) {
     html += `<div style="padding:24px; text-align:center; color:var(--muted); font-size:13.5px;">등록된 RP 보고서가 없습니다.</div>`;
   } else {
     list.forEach((r, idx) => {
-      const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : String(idx + 1);
+      const medal = idx === 0 ? "1위" : idx === 1 ? "2위" : idx === 2 ? "3위" : String(idx + 1);
       html += `<div class="row-hover" style="display:flex; justify-content:space-between; align-items:center; padding:10px 20px; border-top:1px solid var(--line);">
         <div style="display:flex; align-items:center; gap:10px;">
-          <span class="mono" style="width:22px; text-align:center; font-weight:700; color:${idx < 3 ? "var(--gold)" : "var(--muted)"};">${medal}</span>
+          <span class="mono" style="width:30px; text-align:center; font-weight:700; color:${idx < 3 ? "var(--gold)" : "var(--muted)"};">${medal}</span>
           <span style="font-weight:600;">${r.name}</span>
           <span class="mono" style="color:var(--muted); font-size:12px;">고유번호 ${formatBadge(r.badge)}</span>
         </div>
@@ -722,7 +727,7 @@ function renderLawCalc() {
     </div>
 
     <div class="panel" style="display:flex; align-items:center; gap:12px; padding:10px 16px; margin-bottom:16px;">
-      <span style="color:var(--muted); font-size:15px;">🔍</span>
+      <span style="color:var(--muted); font-size:15px;">검색</span>
       <input id="lawSearchInput" data-action="law-search" value="${LAW_SEARCH}" placeholder="검색어 입력 (죄목, 키워드, 위치)" style="background:transparent; border:none; color:var(--text); width:100%; font-size:14px; outline:none;" />
       <button data-action="law-select-all" class="btn-gold" style="padding:6px 12px; font-size:12px; white-space:nowrap;">전체 선택</button>
       <button data-action="law-clear-all" class="btn-ghost" style="padding:6px 12px; font-size:12px; white-space:nowrap;">선택 해제</button>
@@ -824,9 +829,9 @@ function renderLawResults() {
 
     ${lastItem ? `
     <div class="panel" style="padding:18px 20px; line-height:1.6; font-size:13.5px;">
-      <div style="font-weight:700; color:var(--gold); margin-bottom:6px;">📌 ${lastItem.name} (${lastItem.category}) 진행 절차</div>
+      <div style="font-weight:700; color:var(--gold); margin-bottom:6px;">${lastItem.name} (${lastItem.category}) 진행 절차</div>
       <div style="color:var(--text); margin-bottom:10px;">${lastItem.process || "별도 진행 절차 없음"}</div>
-      <div style="font-weight:700; color:var(--danger); margin-bottom:4px;">⚠️ 기타 주의사항</div>
+      <div style="font-weight:700; color:var(--danger); margin-bottom:4px;">기타 주의사항</div>
       <div style="color:var(--muted);">${lastItem.etc || "없음"}</div>
     </div>` : ''}
   `;
@@ -848,7 +853,7 @@ function refreshLawResults() {
 function renderMembers() {
   return `
     ${header("팩션원 관리", `총 ${DATA.accounts.length}명 등록됨`,
-    `<button data-action="export-members" class="btn-ghost">⭳ 엑셀 추출</button>
+    `<button data-action="export-members" class="btn-ghost">엑셀 추출</button>
        <button data-action="toggle-add-member" class="btn-gold">+ 팩션원 등록</button>`)}
     <div id="addMemberForm" class="panel" style="display:none; padding:18px; margin-bottom:18px; gap:12px; align-items:flex-end; flex-wrap:wrap; flex-direction:row;">
       <div class="field"><label>이름</label><input id="mName" /></div>
@@ -864,6 +869,7 @@ function renderMembers() {
 }
 
 let EDIT_BADGE_ID = null;
+let EDIT_NAME_ID = null;
 
 function getFilteredMembers() {
   const searchEl = document.getElementById("memberSearch");
@@ -880,6 +886,10 @@ function refreshMemberList() {
     const input = document.getElementById(`badgeInput_${EDIT_BADGE_ID}`);
     if (input) { input.focus(); input.select(); }
   }
+  if (EDIT_NAME_ID) {
+    const input = document.getElementById(`nameInput_${EDIT_NAME_ID}`);
+    if (input) { input.focus(); input.select(); }
+  }
 }
 
 function renderMemberRows(list) {
@@ -893,11 +903,20 @@ function renderMemberRows(list) {
     if (category === "고위직") catBadgeColor = "var(--gold)";
     else if (category === "간부직") catBadgeColor = "#3498db";
 
+    const nameCellHtml = a.id === EDIT_NAME_ID
+      ? `<span style="display:flex; align-items:center; gap:6px;">
+           <input id="nameInput_${a.id}" value="${a.name != null ? a.name : ""}" style="width:96px; padding:3px 6px; font-size:13px;" onkeydown="if(event.key==='Enter'){this.nextElementSibling.click();}else if(event.key==='Escape'){this.nextElementSibling.nextElementSibling.click();}" />
+           <button data-action="save-name" data-id="${a.id}" class="btn-ghost" style="padding:2px 6px; font-size:11px;">저장</button>
+           <button data-action="cancel-name-edit" class="btn-ghost" style="padding:2px 6px; font-size:11px;">✕</button>
+           <span style="font-size:10px; font-weight:700; color:${catBadgeColor}; border:1px solid ${catBadgeColor}; border-radius:4px; padding:1px 5px; line-height:1.5; white-space:nowrap;">${category}</span>
+         </span>`
+      : `<span style="display:flex; align-items:center; gap:6px; font-weight:600;">
+           <span data-action="edit-name" data-id="${a.id}" style="cursor:pointer; border-bottom:1px dashed var(--gold);" title="클릭해서 이름 수정">${a.name}</span>
+           <span style="font-size:10px; font-weight:700; color:${catBadgeColor}; border:1px solid ${catBadgeColor}; border-radius:4px; padding:1px 5px; line-height:1.5; white-space:nowrap;">${category}</span>
+         </span>`;
+
     html += `<div class="table-row row-hover" style="grid-template-columns:${cols}; align-items:center;" data-id="${a.id}">
-      <span style="display:flex; align-items:center; gap:6px; font-weight:600;">
-        ${a.name}
-        <span style="font-size:10px; font-weight:700; color:${catBadgeColor}; border:1px solid ${catBadgeColor}; border-radius:4px; padding:1px 5px; line-height:1.5; white-space:nowrap;">${category}</span>
-      </span>
+      ${nameCellHtml}
       <span class="mono" style="color:var(--gold); font-weight:600;">${a.id === EDIT_BADGE_ID
         ? `<span style="display:flex; align-items:center; gap:4px;">
                <input id="badgeInput_${a.id}" class="mono" value="${a.badge != null ? a.badge : ""}" style="width:64px; padding:3px 6px; font-size:12px;" onkeydown="if(event.key==='Enter'){this.nextElementSibling.click();}else if(event.key==='Escape'){this.nextElementSibling.nextElementSibling.click();}" />
@@ -972,10 +991,10 @@ function renderRankingPanelHtml(title, limit) {
     html += `<div style="padding:24px; text-align:center; color:var(--muted); font-size:13.5px;">근무 기록이 없습니다.</div>`;
   } else {
     list.forEach((r, idx) => {
-      const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : String(idx + 1);
+      const medal = idx === 0 ? "1위" : idx === 1 ? "2위" : idx === 2 ? "3위" : String(idx + 1);
       html += `<div class="row-hover" style="display:flex; justify-content:space-between; align-items:center; padding:10px 20px; border-top:1px solid var(--line);">
         <div style="display:flex; align-items:center; gap:10px;">
-          <span class="mono" style="width:22px; text-align:center; font-weight:700; color:${idx < 3 ? "var(--gold)" : "var(--muted)"};">${medal}</span>
+          <span class="mono" style="width:30px; text-align:center; font-weight:700; color:${idx < 3 ? "var(--gold)" : "var(--muted)"};">${medal}</span>
           <span style="font-weight:600;">${r.name}</span>
           <span class="mono" style="color:var(--muted); font-size:12px;">고유번호 ${formatBadge(r.badge)}</span>
         </div>
@@ -1598,6 +1617,40 @@ const CLICK_ACTIONS = {
       await apiCall(`/members/${id}/badge`, "PATCH", { badge: newBadge });
     } catch (e) {
       if (acc && prevBadge !== null) acc.badge = prevBadge;
+      refreshMemberList();
+    }
+  },
+  "edit-name": (el) => {
+    EDIT_NAME_ID = el.dataset.id;
+    refreshMemberList();
+  },
+  "cancel-name-edit": () => {
+    EDIT_NAME_ID = null;
+    refreshMemberList();
+  },
+  "save-name": async (el) => {
+    const id = el.dataset.id;
+    const input = document.getElementById(`nameInput_${id}`);
+    const newName = input ? input.value.trim() : "";
+    if (!newName) { showToast("이름을 입력하세요", "danger"); return; }
+
+    const acc = DATA.accounts.find(a => String(a.id) === String(id));
+    const prevName = acc ? acc.name : null;
+    if (acc) acc.name = newName;
+    EDIT_NAME_ID = null;
+    showToast("이름이 변경되었습니다");
+    refreshMemberList();
+
+    try {
+      await apiCall(`/members/${id}/name`, "PATCH", { name: newName });
+      // 본인 이름이 바뀐 경우 세션에도 즉시 반영
+      if (SESSION && String(SESSION.id) === String(id)) {
+        SESSION.name = newName;
+        localStorage.setItem("bureau_session", JSON.stringify(SESSION));
+        silentSync();
+      }
+    } catch (e) {
+      if (acc && prevName !== null) acc.name = prevName;
       refreshMemberList();
     }
   },
