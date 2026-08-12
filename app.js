@@ -1,6 +1,7 @@
 /* ============================================================================
    경찰청 인트라넷 — 백엔드 API 연동 + 법률 계산기 + RP 보고서 통합 버전
    (계급별 등급 분류 및 권한 관리 시스템 적용)
+   [수정] RP 보고서 "결과"를 텍스트 입력 대신 승리/패배 버튼으로 변경
    ============================================================================ */
 
 const API_BASE = "https://lsrhjru.wisp.uno/api";
@@ -8,7 +9,7 @@ const API_BASE = "https://lsrhjru.wisp.uno/api";
 // 사이트 접속 시 캐시를 강제로 갱신하기 위한 버전 값.
 // 배포할 때마다 이 값을 바꾸면, 접속자의 브라우저/서비스워커 캐시를 정리하고
 // 자동으로 새 버전을 받아오게 됩니다 (로그인 상태(localStorage)는 건드리지 않으므로 로그아웃되지 않습니다).
-const APP_VERSION = "2026.08.11-2";
+const APP_VERSION = "2026.08.12-1";
 
 // 전체 계급 목록
 const RANKS = ["처장", "교육원장", "차관보", "관리관", "이사관", "비서실장", "부이사관", "서기관", "사무관", "주사", "주사보", "서기", "서기보", "경찰청 1등급", "경찰청 2등급"];
@@ -47,7 +48,7 @@ let LAST_SNAPSHOT = null; // 마지막으로 렌더링한 데이터의 스냅샷
 function getRankCategory(rank) {
   if (["처장", "교육원장", "차관보", "관리관", "이사관", "비서실장"].includes(rank)) return "고위직";
   if (["부이사관", "서기관", "사무관", "주사"].includes(rank)) return "간부직";
-  if (["주사보", "서기", "서기보", "1등급", "2등급"].includes(rank)) return "일반직";
+  if (["주사보", "서기", "서기보", "경찰청 1등급", "경찰청 2등급"].includes(rank)) return "일반직";
   return "일반직";
 }
 
@@ -150,6 +151,9 @@ let LAW_LAST_CLICKED = null;
 
 // 사이드 공지 검색 상태
 let NOTICE_SEARCH = "";
+
+// RP 보고서 결과(승리/패배) 상태 — 텍스트 입력 대신 버튼으로 선택
+let RP_RESULT = "승리";
 
 /* ------------------------------ API 연동 유틸 ------------------------------ */
 
@@ -627,16 +631,21 @@ function renderRpReportList() {
   if (reports.length === 0) {
     return `<div style="padding:30px; text-align:center; color:var(--muted); font-size:13.5px;">등록된 RP 보고서가 없습니다.</div>`;
   }
-  return reports.map(r => `
+  return reports.map(r => {
+    const isLoss = r.result === "패배";
+    return `
     <div class="row-hover" style="padding:14px 20px; border-top:1px solid var(--line);">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
         <div>
           <div style="font-size:14px; font-weight:600;">${r.rank || ''} ${r.name} <span class="mono" style="color:var(--muted); font-size:12px; font-weight:400;">· No.${formatBadge(r.badge)}</span></div>
-          <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:3px;">${formatDisplayDateTime(r.created_at)} · ${r.location || '-'} · 상대: ${r.target_faction || '-'} · 결과: ${r.result || '-'}</div>
+          <div class="mono" style="font-size:11.5px; color:var(--muted); margin-top:3px;">${formatDisplayDateTime(r.created_at)} · ${r.location || '-'} · 상대: ${r.target_faction || '-'} · 결과:
+            <span style="font-weight:700; color:${isLoss ? 'var(--danger)' : 'var(--ok)'};">${r.result || '-'}</span>
+          </div>
         </div>
       </div>
       <div style="font-size:13px; color:var(--text); margin-top:8px; white-space:pre-wrap; line-height:1.5;">${r.content || ''}</div>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
 function renderRpReport() {
@@ -663,7 +672,12 @@ function renderRpReport() {
           </div>
           <div class="field">
             <label>결과</label>
-            <input id="rpResult" style="width:100%;" placeholder="예) 승리 / 패배" required />
+            <div style="display:flex; gap:8px; margin-top:6px;">
+              <button type="button" class="btn-ghost" data-action="rp-result" data-result="승리"
+                      style="flex:1; padding:9px 0; font-size:13.5px; font-weight:700; ${RP_RESULT === "승리" ? "background:var(--ok); color:#fff; border-color:var(--ok);" : ""}">승리</button>
+              <button type="button" class="btn-ghost" data-action="rp-result" data-result="패배"
+                      style="flex:1; padding:9px 0; font-size:13.5px; font-weight:700; ${RP_RESULT === "패배" ? "background:var(--danger); color:#fff; border-color:var(--danger);" : ""}">패배</button>
+            </div>
           </div>
         </div>
 
@@ -858,7 +872,7 @@ function renderMembers() {
     <div id="addMemberForm" class="panel" style="display:none; padding:18px; margin-bottom:18px; gap:12px; align-items:flex-end; flex-wrap:wrap; flex-direction:row;">
       <div class="field"><label>이름</label><input id="mName" /></div>
       <div class="field"><label>고유번호</label><input id="mBadge" class="mono" style="width:110px;" placeholder="14" /></div>
-      <div class="field"><label>계급</label><select id="mRank" style="border-radius:var(--radius-sm);">${RANKS.map(r => `<option value="${r}" ${r === "2등급" ? "selected" : ""}>${r}</option>`).join("")}</select></div>
+      <div class="field"><label>계급</label><select id="mRank" style="border-radius:var(--radius-sm);">${RANKS.map(r => `<option value="${r}" ${r === "경찰청 2등급" ? "selected" : ""}>${r}</option>`).join("")}</select></div>
       <button data-action="submit-member" class="btn-gold">등록</button>
     </div>
     <div class="panel" style="display:flex; align-items:center; gap:8px; margin-bottom:14px; padding:6px 14px; max-width:280px;">
@@ -1479,6 +1493,24 @@ const CLICK_ACTIONS = {
     refreshLawResults();
   },
 
+  // ---- RP 결과(승리/패배) 버튼 선택 ----
+  "rp-result": (el) => {
+    RP_RESULT = el.dataset.result;
+    document.querySelectorAll('[data-action="rp-result"]').forEach(btn => {
+      const active = btn.dataset.result === RP_RESULT;
+      if (active) {
+        const activeColor = btn.dataset.result === "승리" ? "var(--ok)" : "var(--danger)";
+        btn.style.background = activeColor;
+        btn.style.color = "#fff";
+        btn.style.borderColor = activeColor;
+      } else {
+        btn.style.background = "";
+        btn.style.color = "";
+        btn.style.borderColor = "";
+      }
+    });
+  },
+
   // ---- 출퇴근: 로컬에서 즉시 상태 뒤집고, 서버는 백그라운드로 ----
   "toggle-work": async () => {
     const wasWorking = DATA.attendance.find(a => a.user_id === SESSION.id && !a.clock_out_time);
@@ -1922,16 +1954,15 @@ const SUBMIT_ACTIONS = {
     }
   },
 
-  // ---- RP 보고서: 즉시 목록에 추가 ----
+  // ---- RP 보고서: 즉시 목록에 추가 (결과는 RP_RESULT 버튼 선택값 사용) ----
   "submit-rp-report": async () => {
     const locationInput = document.getElementById("rpLocation");
     const targetInput = document.getElementById("rpTargetFaction");
-    const resultInput = document.getElementById("rpResult");
     const contentInput = document.getElementById("rpContent");
 
     const location = locationInput.value.trim();
     const targetFaction = targetInput.value.trim();
-    const result = resultInput.value.trim();
+    const result = RP_RESULT;
     const content = contentInput.value.trim();
 
     const tempId = `temp_${Date.now()}`;
@@ -1940,7 +1971,8 @@ const SUBMIT_ACTIONS = {
       id: tempId, user_id: SESSION.id, rank: SESSION.rank, name: SESSION.name, badge: SESSION.badge,
       location, target_faction: targetFaction, result, content, created_at: new Date().toISOString()
     });
-    locationInput.value = ""; targetInput.value = ""; resultInput.value = ""; contentInput.value = "";
+    locationInput.value = ""; targetInput.value = ""; contentInput.value = "";
+    RP_RESULT = "승리"; // 다음 작성을 위해 기본값(승리)으로 초기화
     showToast("RP 보고서가 디스코드로 전송되었습니다!", "ok");
     refreshTab();
 
