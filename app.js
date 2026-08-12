@@ -703,36 +703,7 @@ function parseMinDetention(etcText) {
 
 const BAIL_RATE_PER_MIN = 5000000;
 
-// 숫자를 "1억 5,000만원" 같은 한국식 단위 표기로 변환하는 헬퍼.
-// (예: 100,000,000 -> "1억원", 50,000,000 -> "5,000만원")
-function numberToKoreanUnit(n) {
-  const sign = n < 0 ? "-" : "";
-  n = Math.abs(Math.round(n));
-  if (n === 0) return "0";
-  const eok = Math.floor(n / 100000000);
-  const remainder1 = n % 100000000;
-  const man = Math.floor(remainder1 / 10000);
-  const rest = remainder1 % 10000;
-  const parts = [];
-  if (eok > 0) parts.push(`${eok.toLocaleString()}억`);
-  if (man > 0) parts.push(`${man.toLocaleString()}만`);
-  if (rest > 0) parts.push(`${rest.toLocaleString()}`);
-  return sign + parts.join(" ");
-}
-
-function formatWon(n) { return numberToKoreanUnit(n) + "원"; }
-
-// LAW_DATA 안의 "50,000,000원" 같은 원문 벌금 문자열을 한국식 단위 표기로 바꿔주는 헬퍼.
-// "범죄자와 동일"처럼 숫자가 없는 문구는 그대로 둔다.
-function formatFineText(text) {
-  if (!text) return "-";
-  const m = String(text).match(/([\d,]+)\s*원/);
-  if (!m) return text;
-  const num = parseInt(m[1].replace(/,/g, ''), 10);
-  if (isNaN(num)) return text;
-  return numberToKoreanUnit(num) + "원";
-}
-
+function formatWon(n) { return n.toLocaleString() + " 원"; }
 function formatMinutes(n) {
   if (n <= 0) return "0분";
   const h = Math.floor(n / 60), m = n % 60;
@@ -756,7 +727,7 @@ function renderLawCalc() {
     </div>
 
     <div class="panel" style="display:flex; align-items:center; gap:12px; padding:10px 16px; margin-bottom:16px;">
-      <span style="color:var(--muted); font-size:15px;">🔎</span>
+      <span style="color:var(--muted); font-size:15px;">검색</span>
       <input id="lawSearchInput" data-action="law-search" value="${LAW_SEARCH}" placeholder="검색어 입력 (죄목, 키워드, 위치)" style="background:transparent; border:none; color:var(--text); width:100%; font-size:14px; outline:none;" />
       <button data-action="law-select-all" class="btn-gold" style="padding:6px 12px; font-size:12px; white-space:nowrap;">전체 선택</button>
       <button data-action="law-clear-all" class="btn-ghost" style="padding:6px 12px; font-size:12px; white-space:nowrap;">선택 해제</button>
@@ -823,7 +794,7 @@ function renderLawResults() {
           <span style="text-align:center; font-weight:bold; color:${checked ? 'var(--gold)' : 'var(--muted)'};">${checked ? '✓' : '☐'}</span>
           <span style="text-align:center; font-size:12px; color:var(--muted);">${item.category}</span>
           <span style="font-weight:600;">${item.name}</span>
-          <span class="mono" style="text-align:center; color:var(--gold);">${formatFineText(item.fine)}</span>
+          <span class="mono" style="text-align:center; color:var(--gold);">${item.fine || '-'}</span>
           <span class="mono" style="text-align:center; color:var(--steel);">${item.detention || '-'}</span>
           <span style="font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${item.etc || '-'}</span>
         </div>`;
